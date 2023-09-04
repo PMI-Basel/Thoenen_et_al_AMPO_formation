@@ -1,0 +1,266 @@
+---
+title: "Time series metabolites"
+subtitle: "Thoenen_et_al_Bacteria_BX_metabolization"
+author: "Lisa Thönen"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Here we report the analysis of the metabolite data of the time series experiment. 
+
+To characterize the kinetics of MBOA-degradation and AMPO-formation, we performed a time-series experiment with four strong (Sphingobium LSP13, Pseudoarthrobacter LMD1, Microbacterium LMB2, and Enterobacter LME3) and two weak AMPO-formers (Acinetobacter LAC11 and Rhizobium LRC7.O) alongside three negative controls  (Pseudomonas LMX9, Bacillus LBA112 and Microbacterium LMI1x). Rapid and strong AMPO-formation was coupled with a strong decrease of MBOA (LSP13, LMD1 and LMB2) while low amounts of AMPO formed with time and without much decrease of MBOA (LME3 and LAC11). Neither MBOA-degradation nor AMPO-formation was detected in LRC7.O and the negative controls. Together with Fig. 3a these experiments indicate at least two ways to form AMPO from MBOA: (i) AMPO is formed slowly and most likely as the only product from MBOA or (ii) AMPO is rapidly formed in course of a fast and strong degradation of MBOA. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+rm(list = ls())
+```
+
+```{r,include=FALSE}
+# install.packages("dplyr") 
+# install.packages("magrittr") # for the %>% function
+# install.packages("ggplot2") # plots
+# install.packages("readxl") # to read excels
+# install.packages("stringr")
+# install.packages("MESS") # for auc function
+# install.packages("purrr")
+# install.packages("multcomp")
+# install.packages("emmeans")
+# install.packages("ggpubr")
+# install.packages("forcats")
+# install.packages("readr")
+# install.packages("ggpmisc")
+# install.packages("pander")
+# install.packages("rstatix")
+```
+
+```{r,include=FALSE}
+library("dplyr")
+library("magrittr")
+library("ggplot2")
+library("readxl")
+library("tidyr")
+library("readr")
+library("stringr")
+library("MESS") 
+library("purrr")
+library("multcomp")
+library("emmeans")
+library("ggpubr")
+library("forcats")
+library("readr")
+library("ggpmisc")
+library("pander")
+library("rstatix")
+```
+
+```{r, echo=F, message=F, warning=F}
+# Metadata
+metadata <- read_excel("Input/201112_LT_SampleList_Time_series_BX_qTOF.xlsx")
+# Metabolite data
+met <- read_excel("Input/2020116_LT_BacTime.xlsx")
+# Molecular weights
+mol <- read_excel("Input/Molecular_weight_BXDs.xlsx")
+```
+
+```{r, echo=F, message=F, warning=F}
+met %<>% dplyr::rename(Std_conc = `Std. Conc`)
+```
+
+Slopes for quantification using a standard curve the samples are quantified.
+
+```{r, echo=F, message=F, warning=F}
+met_Std <- met %>% 
+  filter(Type %in% "Std") %>% 
+  filter(Std_conc != "0") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, echo=F, message=F, warning=F}
+met_Std <- met_Std %>% filter(Std_conc != "10000")
+```
+
+```{r, echo=F, message=F, warning=F}
+met_Zero <- met %>% 
+  filter(Type %in% "Zero") %>% 
+  filter(Std_conc %in% "0") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, echo=F, message=F, warning=F}
+met_Std <- rbind(met_Std, met_Zero)
+met_Std %<>% filter(!Std_conc %in% "NA")
+```
+
+```{r, echo=F, message=F, warning=F}
+met_Std %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x= Std_conc, y = Area)) + 
+  geom_point(aes(colour = Compound), show.legend = FALSE) +
+  geom_smooth(method = "lm", color="black", formula = y ~ 0 + x) +
+  stat_poly_eq(formula = y ~ 0 + x,
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+                parse = TRUE, label.y.npc = "top", label.x.npc = "left") +
+  stat_fit_glance(method = "lm", method.args = list(formula = y ~ 0 + x),
+                      geom = 'text', aes(label = paste("P-val. = ", 
+                      signif(..p.value.., digits = 4), sep = "")), label.y = "bottom", label.x = "center") +
+  facet_wrap(~Compound, scales = "free") +
+  labs(y = "Area",
+       x = "Concentration")
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes <- met_Std %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>%
+  group_by(Compound) %>% 
+  do(lm(Area ~ 0 + Std_conc,  data = .) %>%  coef() %>%   as.data.frame() %>% slice(1))
+```
+
+```{r, echo=F, message=F, warning=F}
+colnames(St_slopes) <- c("Compound", "Slope")
+```
+
+Samples
+
+```{r, echo=F, message=F, warning=F}
+met$Name <- gsub("20201116_TZ_LT_BacTime_", "", met$Name)
+met$Name <- gsub("LRC7-O", "LRC7.O", met$Name)
+met %<>% filter(Type %in% "Analyte")
+met <- left_join(met, mol, by = "Compound")
+met %<>% mutate(M = as.numeric(M)) # NAs can not be mutated to numeric, a small error message pops up
+```
+
+```{r, echo=F, message=F, warning=F}
+metadata %<>% dplyr::rename(Name = Sample_ID)
+met <- left_join(met, metadata, by = "Name")
+# met %<>% mutate(Dilution = as.numeric(Dilution))
+met %<>% as.data.frame()
+```
+
+```{r, echo=F, message=F, warning=F}
+met$Strain <- factor(met$Strain, levels = c("LSP13",  "LMD1", "LME3", "LMB2", "LMI1x",
+                                            "LPD2", "LMX9", "LAC11", "LBA112", "LRC7.O", "NBC"
+                                           ))
+
+met$Treatment <- factor(met$Treatment, levels = c("DMSO", "MBOA"))
+```
+
+```{r, echo=F, message=F, warning=F}
+met <- left_join(met, St_slopes, by = "Compound")
+```
+
+```{r, echo=F, message=F, warning=F}
+met$cols <- as.character(met$Compound)
+met[met$Compound == "AMPO", ]$cols <- "darkred"
+met[met$Compound == "AAMPO", ]$cols <- "firebrick1"
+met[met$Compound == "MBOA", ]$cols <- "darkblue"
+
+met[met$Compound == "HMBOA", ]$cols <- "skyblue"
+met[met$Compound == "BOA", ]$cols <- "slateblue"
+
+met[met$Compound == "MBOA-Glc", ]$cols <- "slategray"
+met[met$Compound == "HMPMA", ]$cols <-  "slategray"
+met[met$Compound == "DIMBOA", ]$cols <-  "slategray"
+met[met$Compound == "APO", ]$cols <-  "slategray"
+met[met$Compound == "AAPO", ]$cols <-  "slategray"
+
+
+temp <- data.frame(met$Compound, met$cols)
+temp <- plyr::ddply(temp, .variables="met.Compound", .fun=unique)   #library(plyr)
+level_cols_Compound <- as.character(temp[,2])
+names(level_cols_Compound) <- temp[,1]
+```
+
+Calculations
+
+```{r, echo=F, message=F, warning=F}
+met$Area_sample <- as.numeric(met$Area) / 0.02 
+met$ng_sample <- met$Area_sample / met$Slope 
+met$uMol <- (met$ng_sample) / met$M
+```
+
+Graphs
+
+```{r, echo=F, message=F, warning=F}
+met %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  ggplot(aes(x = Timepoint, y = as.numeric(Area), group = Treatment)) +
+  geom_point(aes(colour = Strain), show.legend = TRUE) +
+  facet_wrap(~ Compound, scales = "free") +
+  scale_fill_manual(values = c("darkblue", "darkred"))+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) + 
+  labs(y = "Area")
+```
+
+```{r, echo=F, message=F, warning=F}
+met %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  filter(Compound %in% c("MBOA", "AAMPO", "AMPO")) %>% 
+  # filter(Treatment %in% "MBOA_high") %>% 
+  ggplot(aes(x = Timepoint, y = uMol, group = Compound)) +
+  geom_point(aes(colour = Compound), stat = "identity", size = 2, show.legend = TRUE) +
+  # geom_path(aes(colour = Compound), stat = "summary") +
+  facet_wrap(~ Strain, scales = "fixed") +
+  scale_colour_manual(values = c("darkorange", "darkred", "darkblue", "tomato"))+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) +
+  labs(y = "concentration [µM]")
+```
+
+```{r, echo=F, message=F, warning=F}
+met %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  filter(Treatment %in% "MBOA") %>% 
+  ggplot(aes(x = Timepoint, y = uMol, group = Compound)) +
+  geom_bar(aes(fill = Compound), stat = "identity", size = 2, show.legend = TRUE) +
+  # geom_path(aes(colour = Compound), stat = "summary") +
+  facet_wrap(~ Strain, scales = "fixed") +
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) 
+```
+
+```{r, echo=F, message=F, warning=F}
+#write_rds(met, "met.rds")
+```
+
+Figure metabolisation
+
+```{r, echo=F, message=F, warning=F}
+Time.Fig.3.legend <- met %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  filter(Compound %in% c("MBOA", "AAMPO", "AMPO")) %>% 
+  filter(!Strain %in% c( "LPD2")) %>% 
+  filter(Treatment %in% "MBOA") %>% 
+  ggplot(aes(x = Timepoint, y = uMol, group = Compound)) +
+  geom_bar(aes(fill = Compound), stat = "identity", size = 2, show.legend = TRUE) +
+  # geom_path(aes(colour = Compound), stat = "summary") +
+  facet_wrap(~ Strain, scales = "fixed", nrow = 2) +
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_classic() +
+  theme(strip.background = element_rect(color = NULL, fill= "white", linetype="solid"), strip.text.x = element_text(size = 16/.pt, margin = margin(1, 1, 1, 1)))+
+  scale_y_continuous(expand = expansion(mult = c(0, NA)))+
+  theme(axis.text.x=element_text(size = 16/.pt),
+        axis.text.y=element_text(size = 16/.pt),
+        axis.title = element_text(size = 16/.pt)) +
+  labs(x = "time [hours]", 
+       y = "concentration [µM]")
+
+Time.Fig.3.legend
+
+# ggsave(plot = Time.Fig.3.legend,  filename = "Time.Fig.3.legend.pdf", width = 14.4, height = 6, dpi = 300, scale = 1, units = "cm")
+
+# ggsave(plot = Time.Fig.3.legend,  filename = "Time.Fig.3.legend.svg", width = 14.4, height = 6, dpi = 300, scale = 1, units = "cm")
+```
+
+```{r}
+sessionInfo()
+```
+

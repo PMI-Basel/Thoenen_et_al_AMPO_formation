@@ -1,0 +1,1698 @@
+---
+title: "Metabolite screen Microbacteria"
+subtitle: "Thoenen_et_al_Bacteria_BX_metabolization"
+author: "Lisa Thönen"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    fig_caption: yes
+    toc: true
+    toc_float: true
+    theme: cerulean
+    code_folding: show
+editor_options: 
+  chunk_output_type: console
+---
+
+Here we plot the results of the metabolisation assay in liquid cultures of Microbacteria from the maize root bacteria (Thoenen et al. 2023) and the AtSphere collection (Bai et al. 2015). We tested MBOA and DIMBOA-Glc. Additionally we also report growth data of all Microbacteria in MBOA-containing TSB medium to test them for MBOA tolerance and in MBOA-containing minimal medium to test them for using MBOA as sole carbon source for growth.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+rm(list = ls())
+```
+
+```{r,include=FALSE}
+# install.packages("dplyr")
+# install.packages("magrittr") # for the %>% function
+# install.packages("ggplot2") # plots
+# install.packages("readxl") # to read excels
+# install.packages("stringr")
+# install.packages("MESS") # for auc function
+# install.packages("purrr")
+# install.packages("multcomp")
+# install.packages("emmeans")
+# install.packages("ggpubr")
+# install.packages("forcats")
+# install.packages("readr")
+# install.packages("ggpmisc")
+# install.packages("pander")
+# install.packages("rstatix")
+# install.packages("ggtree")
+# install.packages("tibble")
+# install.packages("aplot")
+# install.packages("knitr")
+# install.packages("ggnewscale")
+# install.packages("svglite")
+```
+
+```{r, warning=F, echo=F, message=F}
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# 
+# BiocManager::install("ggtree")
+```
+
+```{r,include=FALSE}
+library("dplyr")
+library("magrittr")
+library("ggplot2")
+library("readxl")
+library("tidyr")
+library("readr")
+library("stringr")
+library("MESS") 
+library("purrr")
+library("ggpubr")
+library("forcats")
+library("readr")
+library("ggpmisc")
+library("pander")
+library("ggtree")
+library("tibble")
+library("aplot")
+library("knitr")
+library("ggnewscale")
+library("svglite")
+```
+
+```{r functions, echo=F, message=F}
+give.n <- function(x){
+  return(c(y = median(x)*1.05, label = length(x))) 
+  # experiment with the multiplier to find the perfect position
+}
+```
+
+# MBOA metabolisation 
+
+```{r, warning=F, echo=F, message=F}
+# Metadata
+metadata <- read_excel("Input/210513_experimental_design_Microbacteria_MRB_At_metabolites.xlsx", sheet = 6)
+# Metabolite data
+met <- read_excel("Input/20211007_Microbacteria_metabolites.xlsx", sheet = 2)
+# Molecular weights
+mol <- read_excel("Input/Molecular_weight_BXDs.xlsx")
+
+mol %<>% mutate(Compound = gsub("MHPA", "HMPAA", Compound)) %>% 
+       mutate(Compound = gsub("MAPH", "MAP",  Compound)) 
+# more info strains
+database <- read_excel("Input/210513_experimental_design_Microbacteria_MRB_At_metabolites.xlsx", sheet = 2)
+```
+
+```{r, warning=F, echo=F, message=F}
+met %<>% dplyr::rename(Std_conc = `Std. Conc`, ng_mL_ML = `ng/mL`) %>% 
+       mutate(Compound = gsub("MHPA", "HMPAA", Compound)) %>% 
+       mutate(Compound = gsub("MAPH", "MAP",  Compound))
+```
+
+```{r, warning=F, echo=F, message=F}
+metadata <- left_join(metadata, database, by = c("Strain" = "Strain_ID"))
+```
+
+Quantification & calculations: using a standard curve the samples are quantified
+
+```{r, warning=F, echo=F, message=F}
+met_Std_11 <- met %>% 
+  filter(grepl('20211007_MH_LT_Bact_PMStds11x', Name)) %>% 
+  # mutate(Type = as.factor(Type)) %>% 
+  filter(Type %in% "Standard") %>% 
+  filter(Std_conc != "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+met_Zero <- met %>% 
+  filter(grepl('20211007_MH_LT_Bact_PMStds11x', Name)) %>% 
+  # filter(Type %in% "Zero") %>% 
+  filter(Std_conc %in% "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+met_Std_11 <- rbind(met_Std_11, met_Zero)
+met_Std_11 %<>% filter(!Std_conc %in% "NA")
+```
+
+```{r, warning=F, echo=F, message=F}
+met_Std_11 %>% 
+  filter(Compound != "HMPAA") %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x= Std_conc, y = Area)) + 
+  geom_point(aes(colour = Compound), show.legend = FALSE) +
+  geom_smooth(method = "lm", color="black", formula = y ~ 0 + x) +
+  stat_poly_eq(formula = y ~ 0 + x,
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+                parse = TRUE, label.y.npc = "top", label.x.npc = "left") +
+  stat_fit_glance(method = "lm", method.args = list(formula = y ~ 0 + x),
+                      geom = 'text', aes(label = paste("P-val. = ", 
+                      signif(..p.value.., digits = 4), sep = "")), label.y = "bottom", label.x = "center") +
+  facet_wrap(~Compound, scales = "free") +
+  labs(y = "Area",
+       x = "Concentration")
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes_11 <- met_Std_11 %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>%
+  group_by(Compound) %>% 
+  do(lm(Area ~ 0 + Std_conc,  data = .) %>%  coef() %>%   as.data.frame() %>% slice(1))
+```
+
+```{r, warning=F, echo=F, message=F}
+colnames(St_slopes_11) <- c("Compound", "Slope")
+```
+
+```{r, warning=F, echo=F, message=F}
+met_Std_HMPAA <- met %>% 
+  filter(grepl('20211007_MH_LT_Bact_MHPA', Name)) %>% 
+  # mutate(Type = as.factor(Type)) %>% 
+  filter(Type %in% "Standard") %>% 
+  filter(Std_conc != "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+met_Zero_HMPAA <- met %>% 
+  filter(grepl('20211007_MH_LT_Bact_MHPA', Name)) %>% 
+  # filter(Type %in% "Zero") %>% 
+  filter(Std_conc %in% "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+met_Std_HMPAA <- rbind(met_Std_HMPAA, met_Zero_HMPAA)
+met_Std_HMPAA %<>% filter(!Std_conc %in% "NA")
+```
+
+```{r, warning=F, echo=F, message=F}
+met_Std_HMPAA %>% 
+  filter(Compound %in% "HMPAA") %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x= Std_conc, y = Area)) + 
+  geom_point(aes(colour = Compound), show.legend = FALSE) +
+  geom_smooth(method = "lm", color="black", formula = y ~ 0 + x) +
+  stat_poly_eq(formula = y ~ 0 + x,
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+                parse = TRUE, label.y.npc = "top", label.x.npc = "left") +
+  stat_fit_glance(method = "lm", method.args = list(formula = y ~ 0 + x),
+                      geom = 'text', aes(label = paste("P-val. = ", 
+                      signif(..p.value.., digits = 4), sep = "")), label.y = "bottom", label.x = "center") +
+  facet_wrap(~Compound, scales = "free") +
+  labs(y = "Area",
+       x = "Concentration")
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes_HMPAA <- met_Std_HMPAA %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>%
+  group_by(Compound) %>% 
+  do(lm(Area ~ 0 + Std_conc,  data = .) %>%  coef() %>%   as.data.frame() %>% slice(1))
+```
+
+```{r, warning=F, echo=F, message=F}
+colnames(St_slopes_HMPAA) <- c("Compound", "Slope")
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes_11_HMPAA <- left_join(St_slopes_11, St_slopes_HMPAA, by = "Compound")
+
+St_slopes_11_HMPAA_unite <- St_slopes_11_HMPAA %>% unite("slope_all", Slope.x:Slope.y, remove = FALSE)
+St_slopes_11_HMPAA_unite$slope_all <- gsub("_NA", "", St_slopes_11_HMPAA_unite$slope_all)
+St_slopes_11_HMPAA_unite$slope_all <- gsub("NA_", "", St_slopes_11_HMPAA_unite$slope_all)
+St_slopes_11_HMPAA_unite %<>% dplyr::select(Compound, slope_all)
+```
+
+```{r, warning=F, echo=F, message=F}
+met %<>% filter(Compound != "AAPO") 
+```
+
+```{r, warning=F, echo=F, message=F}
+met$Name <- gsub("20211007_MH_LT_Bact_", "", met$Name)
+met_t0  <- met %>% filter(Name %in% c("t0_MBOA", "t0_DMSO"))
+met %<>% filter(Type %in% "Analyte")
+met <- rbind(met, met_t0)
+met <- left_join(met, mol, by = "Compound")
+met %<>% mutate(M = as.numeric(M)) # NAs can not be mutated to numeric, a small error message pops up
+```
+
+```{r, warning=F, echo=F, message=F}
+metadata %<>% dplyr::rename(Name = Sample_ID)
+met <- left_join(met, metadata, by = "Name")
+# met %<>% mutate(Dilution = as.numeric(Dilution))
+met %<>%
+  mutate(Strain = case_when(Name == "t0_MBOA" ~ "t0",
+                            Name == "t0_DMSO" ~ "t0",
+                            Strain != "t0_DMSO" & Strain != "t0_MBOA" ~ Strain)) %>% 
+  mutate(Treatment = case_when(Name == "t0_MBOA" ~ "MBOA",
+                               Name == "t0_DMSO" ~ "DMSO",
+                               Treatment != "t0_DMSO" & Treatment != "t0_MBOA" ~ Treatment))
+
+met %<>% as.data.frame()
+```
+
+```{r, warning=F, echo=F, message=F}
+met$Treatment <- factor(met$Treatment, levels = c("DMSO", "MBOA"))
+```
+
+```{r, warning=F, echo=F, message=F}
+met <- left_join(met, St_slopes_11_HMPAA_unite, by = "Compound")
+```
+
+```{r, warning=F, echo=F, message=F}
+met$cols <- as.character(met$Compound)
+met[met$Compound == "MBOA-Glc", ]$cols <- "cornflowerblue"
+met[met$Compound == "HMPMA", ]$cols <-  "darkolivegreen4"
+
+
+met[met$Compound == "AMPO", ]$cols <- "darkred"
+met[met$Compound == "AAMPO", ]$cols <- "firebrick1"
+met[met$Compound == "HMPAA", ]$cols <- "gold2"
+met[met$Compound == "MBOA", ]$cols <- "darkblue"
+
+met[met$Compound == "HMBOA", ]$cols <- "skyblue"
+met[met$Compound == "BOA", ]$cols <- "slateblue"
+
+
+met[met$Compound == "DIMBOA", ]$cols <-  "tan"
+met[met$Compound == "APO", ]$cols <-  "pink"
+# met[met$Compound == "AAPO", ]$cols <-  "palevioletred"
+
+temp <- data.frame(met$Compound, met$cols)
+temp <- plyr::ddply(temp, .variables="met.Compound", .fun=unique)   #library(plyr)
+level_cols_Compound <- as.character(temp[,2])
+names(level_cols_Compound) <- temp[,1]
+```
+
+```{r, warning=F, echo=F, message=F}
+# met$Area_sample <- as.numeric(met$Area) / 0.025 
+
+met$Area_sample <- as.numeric(met$Area) / 0.04 
+met$slope_all <- as.numeric(met$slope_all)
+met$ng_sample <- met$Area_sample / met$slope_all 
+met$uMol <- (met$ng_sample) / met$M
+```
+
+Explore raw data
+
+```{r, warning=F, echo=F, message=F}
+met %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  ggplot(aes(x = Strain, y = uMol, group = Treatment)) +
+  geom_point(aes(colour = Treatment), show.legend = TRUE) +
+  facet_wrap(~ Compound, scales = "free") +
+  scale_colour_manual(values = c("darkblue", "darkred"))+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) 
+```
+
+Stacked Bargraph
+
+```{r, warning=F, echo=F, message=F}
+met %>% 
+  # mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  filter(Treatment %in% "MBOA") %>% 
+  # filter(Strain %in% c("SCS", "SCR")) %>% 
+  # filter(Treatment %in% "MBOA_high") %>% 
+  ggplot(aes(x = Strain, y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "identity", size = 2, show.legend = TRUE) +
+  # geom_path(aes(colour = Compound), stat = "summary") +
+  # facet_wrap(~ Strain, scales = "fixed") +
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) +
+  labs(y = "concentration [µM]" )
+```
+
+## Phylogenetic tree
+
+```{r, warning=F, echo=F, message=F}
+### Newick tree ###
+species_tree <- ape::read.tree("Input/SpeciesTree_rooted.txt")
+
+metadata_tree <- metadata %>% mutate(Host_plant = Collection) %>% 
+  mutate(Host_plant = gsub("Species_collection", "maize", Host_plant)) %>% 
+  mutate(Host_plant = gsub("Maize_collection", "maize", Host_plant)) %>% 
+  mutate(Host_plant = gsub("MBOA", "maize", Host_plant)) %>% 
+  mutate(Host_plant = gsub("Compartment_collection", "maize", Host_plant)) %>% 
+  mutate(Host_plant = gsub("AtSphere", "arabidopsis", Host_plant)) %>% 
+  mutate(Host_plant = case_when(Strain == "LBN7" ~ "brassica", Strain != "LBN7" ~ Host_plant)) %>% 
+  mutate(Host_plant = case_when(Strain == "LTA6" ~ "wheat", Strain != "LTA6" ~ Host_plant)) %>% 
+  mutate(Host_plant = case_when(Strain == "LMS4" ~ "medicago", Strain != "LMS4" ~ Host_plant)) %>% 
+  # mutate(Host_plant = case_when(Strain == "KHBO19" ~ "clover", Strain != "KHB019" ~ Host_plant)) %>% 
+  dplyr::select(Strain, AMPO_on_MBOA_plates, Host_plant) %>% 
+  filter(!Strain %in% NA) %>% 
+  filter(!Strain %in% "NA") %>% 
+  mutate(AMPO_on_MBOA_plates = gsub("no", "negative", AMPO_on_MBOA_plates)) %>% 
+  mutate(AMPO_on_MBOA_plates = gsub("yes", "positive", AMPO_on_MBOA_plates)) %>% 
+  add_row(Strain = "KHB019", AMPO_on_MBOA_plates = "negative", Host_plant = "clover") %>%  mutate(Host_plant = factor(Host_plant, levels = c("maize", "arabidopsis", "brassica", "medicago", "wheat", "clover", "NA")))
+  
+metadata_tree_2 <- metadata_tree %>% 
+        mutate(Host_plant = gsub("brassica", "other", Host_plant)) %>% 
+        mutate(Host_plant = gsub("medicago", "other", Host_plant)) %>% 
+        mutate(Host_plant = gsub("wheat", "other", Host_plant)) %>% 
+        mutate(Host_plant = gsub("clover", "other", Host_plant))
+
+p_host_simple <-  species_tree %>% 
+      ggtree::ggtree(branch.length = "branch.length", ladderize = TRUE) %<+% metadata_tree_2 +
+      geom_tippoint(aes(color=Host_plant), size = 3) + 
+      geom_tiplab(align=TRUE, linetype='dashed', linesize=.3, size = 3, offset = 0.02) +
+      scale_color_manual(values = c("#3e5437", "tan3", "grey"), labels = c("maize", "arabidopsis", "other"), name = "Host plant") +
+      xlim(0, 2) 
+
+p_host_simple
+```
+
+```{r, warning=F, echo=F, message=F}
+# add orthogroup data
+
+met_OG <- met %>% mutate(OG0001785 = 0,
+               OG0002141 = 0,
+               OG0002970 = 0,
+               OG0002971 = 0,
+               OG0002972 = 0)
+
+met_OG %<>%
+  mutate(OG0001785 = case_when(AMPO_on_MBOA_plates == "yes" ~ "2",
+                            AMPO_on_MBOA_plates == "no" ~ "0")) %>% 
+  mutate(OG0001785 = case_when(Strain == "LWH7" ~ "4",
+                            Strain != "LWH7" ~ OG0001785)) %>%
+  mutate(OG0001785 = case_when(Strain == "LWH3" ~ "3",
+                            Strain != "LWH3" ~ OG0001785)) %>%
+  mutate(OG0001785 = case_when(Strain == "LWS13" ~ "3",
+                            Strain != "LWS13" ~ OG0001785)) %>%
+  mutate(OG0002141 = case_when(AMPO_on_MBOA_plates == "yes" ~ "2",
+                            AMPO_on_MBOA_plates == "no" ~ "0")) %>% 
+  mutate(OG0002141 = case_when(Strain == "LWH7" ~ "3",
+                            Strain != "LWH7" ~ OG0002141)) %>%
+  mutate(OG0002141 = case_when(Strain == "LWH3" ~ "3",
+                            Strain != "LWH3" ~ OG0002141)) %>%
+  mutate(OG0002141 = case_when(Strain == "LWS13" ~ "3",
+                            Strain != "LWS13" ~ OG0002141)) %>%
+  mutate(OG0002141 = case_when(Strain == "LWH13" ~ "1",
+                            Strain != "LWH13" ~ OG0002141)) %>%
+  mutate(OG0002141 = case_when(Strain == "LM3X" ~ "1",
+                            Strain != "LM3X" ~ OG0002141)) %>%
+  mutate(OG0002141 = case_when(Strain == "LMB2" ~ "1",
+                            Strain != "LMB2" ~ OG0002141)) %>%
+  mutate(OG0002141 = case_when(Strain == "LMX7" ~ "1",
+                            Strain != "LMX7" ~ OG0002141)) %>%
+  mutate(OG0002141 = case_when(Strain == "LWO14" ~ "1",
+                            Strain != "LWO14" ~ OG0002141)) %>%
+  mutate(OG0002970 = case_when(AMPO_on_MBOA_plates == "yes" ~ "1",
+                           AMPO_on_MBOA_plates == "no" ~ "0")) %>% 
+  mutate(OG0002971 = case_when(AMPO_on_MBOA_plates == "yes" ~ "1",
+                            AMPO_on_MBOA_plates == "no" ~ "0")) %>% 
+  mutate(OG0002972 = case_when(AMPO_on_MBOA_plates == "yes" ~ "1",
+                            AMPO_on_MBOA_plates == "no" ~ "0"))  
+  
+```
+
+```{r, warning=F, echo=F, message=F}
+tax_host_pheno <- ggtree::gheatmap(p_host_simple + new_scale_fill(),
+         metadata_tree %>% 
+         dplyr::select(Strain, AMPO_on_MBOA_plates) %>% 
+           dplyr::rename('Plate assay' = AMPO_on_MBOA_plates) %>% 
+         distinct %>% 
+         as.data.frame() %>% column_to_rownames("Strain"),
+         offset=0.3,
+         width=0.2,
+         colnames=TRUE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_manual(values = c("lightgoldenrod", "darkred")) +
+  labs(fill = "AMPO phenotype")
+
+tax_host_pheno
+```
+
+```{r, warning=F, echo=F, message=F}
+MBOA_AMPO_met_tax_host <-ggtree::gheatmap(tax_host_pheno + new_scale_fill(),
+         met %>% filter(Compound %in% c("MBOA", "AMPO")) %>% 
+           filter(Treatment %in% "MBOA") %>% 
+           filter(!uMol %in% 0.00000000) %>%
+           filter(!uMol > 600) %>%
+           mutate(Compound = factor(Compound, levels = c("MBOA", "AMPO", "AAMPO", "HMPAA"))) %>% 
+         # filter(MBOA_DMSO_per < 0) %>% 
+         # mutate(Chem = as.character(Conc)) %>%  
+         dplyr::select(Strain, Compound, uMol) %>% tidyr::spread(Compound, uMol) %>% 
+         distinct %>% 
+         as.data.frame() %>% column_to_rownames("Strain") ,
+         offset=0.5,
+         width=0.4,
+         colnames=TRUE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_gradient2(low = "grey50", midpoint = 20, high = "darkred")+
+  labs(#x = "Benzoxazinoid",
+       #y = "Relative AUC", 
+       colour = "AMPO phenotype",
+       shape = "Host plant",
+       fill = "Concentration [uM]") 
+
+MBOA_AMPO_met_tax_host
+#dev.off()
+```
+
+```{r, warning=F, echo=F, message=F}
+met_OG_selected <- met_OG %>% 
+  # filter(Strain != "t0") %>% 
+  #          mutate(Strain = gsub("NBC", "KHB019",  Strain)) %>% 
+         dplyr::select(Strain, OG0001785, OG0002141, OG0002970, OG0002971, OG0002972) %>% 
+           mutate(OG0001785 = replace_na(OG0001785, "0")) %>% 
+           mutate(OG0002141 = replace_na(OG0002141, "0")) %>% 
+           mutate(OG0002970 = replace_na(OG0002970, "0")) %>% 
+           mutate(OG0002971 = replace_na(OG0002971, "0")) %>% 
+           mutate(OG0002972 = replace_na(OG0002972, "0")) %>% 
+           add_row(Strain = "KHB019", OG0001785 = "0", OG0002141 = "0", OG0002970 = "0", OG0002971 = "0", OG0002972 = "0") %>% unique()
+```
+
+
+```{r, warning=F, echo=F, message=F}
+Fig.4.MBOA_AMPO_met_tax_shape_OG_host <- ggtree::gheatmap(MBOA_AMPO_met_tax_host + new_scale_fill(),
+         met_OG_selected %>% 
+         distinct %>% 
+         as.data.frame() %>% column_to_rownames("Strain"),
+         offset=0.8,
+         width=1,
+         colnames=TRUE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_manual(values = c("gray100", "gray80", "gray60", "gray40", "gray20", "white")) +
+  labs(fill = "Orthogroup copies")
+
+Fig.4.MBOA_AMPO_met_tax_shape_OG_host
+
+# ggsave(plot = Fig.4.MBOA_AMPO_met_tax_shape_OG_host, filename = "Fig.4.MBOA_AMPO_met_tax_shape_OG_host.pdf", width = 23, height = 23, dpi = 300, scale = 1, units = "cm")
+# 
+# ggsave(plot = Fig.4.MBOA_AMPO_met_tax_shape_OG_host, filename = "Fig.4.MBOA_AMPO_met_tax_shape_OG_host.svg", width = 23, height = 23, dpi = 300, scale = 1, units = "cm")
+```
+
+```{r, warning=F, echo=F, message=F}
+met_bar_phylo <- met %>% filter(Treatment %in% "MBOA") %>% filter(!Compound %in% c("AMPO", "AAMPO")) %>% dplyr::select(Strain, Compound, uMol) %>% pivot_wider(names_from = Compound, values_from = uMol) 
+
+met_bar_phylo$Strain <- gsub("NBC", "KHB019", met_bar_phylo$Strain)
+met_bar_phylo %<>% as.data.frame()
+
+# met_bar_phylo %<>% column_to_rownames("Strain")
+
+met_phylo <- met %>% filter(Treatment %in% "MBOA") %>% filter(Strain != "t0") %>% dplyr::select(Strain, Compound, uMol)
+met_phylo$Strain <- gsub("NBC", "KHB019", met_phylo$Strain)
+```
+
+```{r, warning=F, echo=F, message=F}
+p_tree <-  species_tree %>% 
+      ggtree::ggtree(branch.length = "none", ladderize = TRUE, right = FALSE) %<+% metadata_tree + 
+      geom_tippoint(aes(color=AMPO_on_MBOA_plates), show.legend = FALSE) + 
+      geom_tiplab(size=3) + 
+      xlim(0, 30)+
+      scale_color_manual(values = c("gold", "darkred"))
+```
+
+```{r, warning=F, echo=F, message=F}
+p_met <- met_phylo %>% 
+         mutate(uMol = case_when(Strain == "KHB019" ~ 0,
+                                  Strain != "KHB019" ~ uMol)) %>% 
+        ggplot(aes(y = Strain, x = uMol)) +
+        geom_bar(aes(fill = Compound), stat = "identity") +
+        # scale_fill_jco()+
+        scale_fill_manual(values = level_cols_Compound)+
+        theme_tree2() +
+        labs(x = "Concentration [uM]")
+
+plot_tax_met_micro <- p_met %>% 
+  insert_left(p_host_simple, width = 0.5)  
+
+print(plot_tax_met_micro)
+
+#ggsave(plot = plot_tax_met_micro, filename = "plot_tax_met_micro.pdf", width = 15, height = 15, dpi = 300, scale = 1, units = "cm")
+# 
+#ggsave(plot = plot_tax_met_micro, filename = "plot_tax_met_micro.svg", width = 15, height = 15, dpi = 300, scale = 1, units = "cm")
+```
+
+# DIMBOA-Glc metabolisation
+```{r, warning=F, echo=F, message=F}
+# Metadata
+# metadataDA <- read_excel("220105_Microbacteria_DMSO_DMG_AMPO_Samplelist_metabolites_qTOF.xlsx", sheet = 1) %>% filter(!Treatment %in% "A")
+# 
+# write.csv(metadataDA, "Microbacteria_DMSO_DMG_sample_list.csv")
+
+metadataDA <- read.csv("Input/Microbacteria_DMSO_DMG_sample_list.csv")
+
+metadataDA <- left_join(metadataDA, database, by = c("Strain" = "Strain_ID"))
+# Metabolite data
+# metDA <- read_excel("20220203_MH_LT_Microbact_DMG_metabolites_quantified_xlsx.xlsx", sheet = 2)
+#   
+#   metDA %<>% mutate(Treat = case_when(grepl("_A", Name) ~ "AMPO",
+#                                   grepl("_D", Name) ~ "DMSO",
+#                                   grepl("_G", Name) ~ "DMG")) %>% filter(!Treat %in% "AMPO")
+
+# write.csv(metDA, "Microbact_DMG_metabolites_quantified.csv")
+
+metDA <- read.csv("Input/Microbact_DMG_metabolites_quantified.csv")
+
+
+metDA %<>% dplyr::rename(Std_conc = Std..Conc, ng_mL_ML = ng.mL) %>% 
+       mutate(Compound = gsub("MHPA", "HMPAA", Compound)) %>% 
+       mutate(Compound = gsub("MAPH", "MAP",  Compound))
+```
+
+
+Quantification & calculations using a standard curve the samples are quantified
+
+```{r, warning=F, echo=F, message=F}
+metDA_Std_11 <- metDA %>% 
+  filter(grepl('20220203_MH_LT_Microbact_metabolites_PM11xStds', Name)) %>% 
+  filter(Type %in% "Standard") %>% 
+  filter(Std_conc != "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA_Zero <- metDA %>% 
+  filter(grepl('20220203_MH_LT_Microbact_metabolites_PM11xStds', Name)) %>% 
+  filter(Std_conc %in% "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA_Std_11 <- rbind(metDA_Std_11, metDA_Zero)
+metDA_Std_11 %<>% filter(!Std_conc %in% "NA")
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA_Std_11 %>% 
+  filter(!Compound %in% c("AAPO", "HMPAA", "DIBOA-Glc", "HBOA-Glc", "HM2BOA-Glc", "HMBOA-Glc", "MAPH")) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x= Std_conc, y = Area)) + 
+  geom_point(aes(colour = Compound), show.legend = FALSE) +
+  geom_smooth(method = "lm", color="black", formula = y ~ 0 + x) +
+  stat_poly_eq(formula = y ~ 0 + x,
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+                parse = TRUE, label.y.npc = "top", label.x.npc = "left") +
+  stat_fit_glance(method = "lm", method.args = list(formula = y ~ 0 + x),
+                      geom = 'text', aes(label = paste("P-val. = ", 
+                      signif(..p.value.., digits = 4), sep = "")), label.y = "bottom", label.x = "center") +
+  facet_wrap(~Compound, scales = "free") +
+  labs(y = "Area",
+       x = "Concentration")
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes_11_DA <- metDA_Std_11 %>% 
+  filter(!Compound %in% c("AAPO", "HMPAA", "DIBOA-Glc", "HBOA-Glc", "HM2BOA-Glc", "HMBOA-Glc", "MAP")) %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>%
+  group_by(Compound) %>% 
+  do(lm(Area ~ 0 + Std_conc,  data = .) %>%  coef() %>%   as.data.frame() %>% slice(1))
+```
+
+```{r, warning=F, echo=F, message=F}
+colnames(St_slopes_11_DA) <- c("Compound", "Slope")
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA_Std_HMPAA <- metDA %>% 
+  filter(grepl('20220203_MH_LT_Microbact_metabolites_MHPA', Name)) %>% 
+  # mutate(Type = as.factor(Type)) %>% 
+  filter(Type %in% "Standard") %>% 
+  filter(Std_conc != "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA_Zero_HMPAA <- metDA %>% 
+  filter(grepl('20220203_MH_LT_Microbact_metabolites_MHPA', Name)) %>% 
+  # filter(Type %in% "Zero") %>% 
+  filter(Std_conc %in% "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA_Std_HMPAA <- rbind(metDA_Std_HMPAA, metDA_Zero_HMPAA)
+metDA_Std_HMPAA %<>% filter(!Std_conc %in% "NA")
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA_Std_HMPAA %>% 
+  filter(Compound %in% "HMPAA") %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x= Std_conc, y = Area)) + 
+  geom_point(aes(colour = Compound), show.legend = FALSE) +
+  geom_smooth(method = "lm", color="black", formula = y ~ 0 + x) +
+  stat_poly_eq(formula = y ~ 0 + x,
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+                parse = TRUE, label.y.npc = "top", label.x.npc = "left") +
+  stat_fit_glance(method = "lm", method.args = list(formula = y ~ 0 + x),
+                      geom = 'text', aes(label = paste("P-val. = ", 
+                      signif(..p.value.., digits = 4), sep = "")), label.y = "bottom", label.x = "center") +
+  facet_wrap(~Compound, scales = "free") +
+  labs(y = "Area",
+       x = "Concentration")
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes_HMPAA_DA <- metDA_Std_HMPAA %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>%
+  group_by(Compound) %>% 
+  do(lm(Area ~ 0 + Std_conc,  data = .) %>%  coef() %>%   as.data.frame() %>% slice(1))
+```
+
+```{r, warning=F, echo=F, message=F}
+colnames(St_slopes_HMPAA_DA) <- c("Compound", "Slope")
+```
+join 11 stds and HMPAA
+```{r, warning=F, echo=F, message=F}
+St_slopes_11_HMPAA_DA_unite <- rbind(St_slopes_11_DA, St_slopes_HMPAA_DA %>% filter(Compound %in% "HMPAA"))
+
+# St_slopes_HMPAA_DA_unite <- St_slopes_HMPAA_DA %>% unite("slope_all", Slope.x:Slope.y, remove = FALSE)
+# St_slopes_11_HMPAA_DA_unite$slope_all <- gsub("_NA", "", St_slopes_11_HMPAA_DA_unite$slope_all)
+# St_slopes_11_HMPAA_DA_unite$slope_all <- gsub("NA_", "", St_slopes_11_HMPAA_DA_unite$slope_all)
+# St_slopes_11_HMPAA_DA_unite %<>% dplyr::select(Compound, slope_all)
+```
+
+remove the compounds which are not reliable quantified
+```{r, warning=F, echo=F, message=F}
+metDA %<>% filter(Compound != "AAPO") 
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA$Name <- gsub("20220203_MH_LT_Microbact_metabolites_", "", metDA$Name)
+# metDA_t0  <- metDA %>% filter(Name %in% c("t0_MBOA", "t0_DMSO"))
+metDA %<>% filter(Type %in% "Analyte")
+#metDA <- rbind(metDA, metDA_t0)
+metDA <- left_join(metDA, mol, by = "Compound")
+metDA %<>% mutate(M = as.numeric(M)) # NAs can not be mutated to numeric, a small error message pops up
+```
+
+```{r, warning=F, echo=F, message=F}
+metadataDA %<>% dplyr::rename(Name = Sample)
+
+metDA <- left_join(metDA, metadataDA, by = "Name")
+# met %<>% mutate(Dilution = as.numeric(Dilution))
+# metDA %<>%
+#   mutate(Strain = case_when(Name == "t0_MBOA" ~ "t0",
+#                             Name == "t0_DMSO" ~ "t0",
+#                             Strain != "t0_DMSO" & Strain != "t0_MBOA" ~ Strain)) %>% 
+#   mutate(Treatment = case_when(Name == "t0_MBOA" ~ "MBOA",
+#                                Name == "t0_DMSO" ~ "DMSO",
+#                                Treatment != "t0_DMSO" & Treatment != "t0_MBOA" ~ Treatment))
+# 
+# metDA %<>% as.data.frame()
+```
+
+```{r, warning=F, echo=F, message=F}
+# met$Strain <- factor(met$Strain, levels = c("LSP13",  "LMD1", "LME3", "LMB2", "LMI1x",
+#                                             "LPD2", "LMX9", "LAC11", "LBA112", "LRC7.O", "NBC",
+#                                             "LMG1", "LMN1", "LST17", "LBA21", "SCR", "SCS"))
+
+metDA$Treatment <- factor(metDA$Treatment, levels = c("D", "G", "A"))
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA <- left_join(metDA, St_slopes_11_HMPAA_DA_unite, by = "Compound")
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA$cols <- as.character(metDA$Compound)
+metDA[metDA$Compound == "AMPO", ]$cols <- "darkred"
+metDA[metDA$Compound == "AAMPO", ]$cols <- "firebrick1"
+metDA[metDA$Compound == "HMPAA", ]$cols <- "gold2"
+metDA[metDA$Compound == "MBOA", ]$cols <- "darkblue"
+metDA[metDA$Compound == "MAP", ]$cols <- "khaki"
+
+metDA[metDA$Compound == "HMBOA", ]$cols <- "skyblue"
+metDA[metDA$Compound == "BOA", ]$cols <- "slateblue"
+metDA[metDA$Compound == "MBOA-Glc", ]$cols <- "darkmagenta"
+
+
+metDA[metDA$Compound == "HMPMA", ]$cols <-  "slategray"
+metDA[metDA$Compound == "DIMBOA", ]$cols <-  "tan"
+metDA[metDA$Compound == "APO", ]$cols <-  "pink"
+# metDA[metDA$Compound == "AAPO", ]$cols <-  "pink3"
+
+metDA[metDA$Compound == "DIMBOA-Glc", ]$cols <-  "darkorange2"
+metDA[metDA$Compound == "HDMBOA-Glc", ]$cols <-  "thistle3"
+metDA[metDA$Compound == "HBOA-Glc", ]$cols <-  "slategray"
+metDA[metDA$Compound == "DIBOA-Glc", ]$cols <-  "slategray"
+metDA[metDA$Compound == "HMBOA-Glc", ]$cols <-  "skyblue2"
+metDA[metDA$Compound == "HM2BOA-Glc", ]$cols <-  "skyblue4"
+metDA[metDA$Compound == "DIM2BOA-Glc", ]$cols <-  "sandybrown"
+metDA[metDA$Compound == "HDM2BOA-Glc", ]$cols <-  "thistle1"
+
+temp <- data.frame(metDA$Compound, metDA$cols)
+temp <- plyr::ddply(temp, .variables="metDA.Compound", .fun=unique)   #library(plyr)
+level_cols_Compound <- as.character(temp[,2])
+names(level_cols_Compound) <- temp[,1]
+```
+
+
+Dilutions: 
+150 + 350 = 500 
+50 + 700 = 750 
+500 / 150 = 3.33333
+750 / 50 = 15
+
+1/((500/150)*15) = 0.02
+
+for some reason the MBOA concentrations are a bit too high (factor 1.273141 controlled with t0 MBOA sample) --> ev because of precipitaion issue?
+
+```{r, warning=F, echo=F, message=F}
+metDA$Area_sample <- as.numeric(metDA$Area) / 0.025 
+# metDA$Slope <- as.numeric(metDA$Slope)
+metDA$ng_sample <- metDA$Area_sample / metDA$Slope 
+metDA$uMol <- (metDA$ng_sample) / metDA$M
+```
+
+Explore raw data
+```{r, warning=F, echo=F, message=F}
+metDA %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  ggplot(aes(x = Strain, y = uMol, group = Treatment)) +
+  geom_point(aes(colour = Treatment), show.legend = TRUE) +
+  facet_wrap(~ Compound, scales = "free") +
+  scale_colour_manual(values = c("darkblue", "darkorange2", "maroon"))+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) 
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x = Strain, y = uMol, group = Treatment)) +
+  geom_bar(aes(fill = Treatment), stat = "identity", size = 2, show.legend = TRUE) +
+  facet_wrap(~ Compound, scales = "fixed") +
+  scale_fill_manual(values = c("darkblue", "darkorange2", "maroon"))+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) 
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA %>% 
+  filter(!Compound %in% c("DIM2BOA-Glc", "HDM2BOA-Glc")) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  filter(Treatment %in% "G") %>% 
+  ggplot(aes(x = Strain, y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "identity", size = 2, show.legend = TRUE) +
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) +
+  labs(title = "DIMBOA-Glc")
+```
+
+## Phylogenetic tree
+```{r, warning=F, echo=F, message=F}
+### Newick tree ###
+species_tree <- ape::read.tree("Input/SpeciesTree_rooted.txt")
+
+metadata_tree <- metadata %>% dplyr::select(Strain, AMPO_on_MBOA_plates) %>% filter(!Strain %in% NA)
+
+p <-  species_tree %>% 
+      ggtree::ggtree(branch.length = "none", ladderize = TRUE) %<+% metadata_tree + 
+      geom_tippoint(aes(color=AMPO_on_MBOA_plates)) + 
+      geom_tiplab(size=3) + 
+      scale_color_manual(values = c("gold", "darkred"))
+```
+
+```{r, message=F, echo=F, warning=F}
+ggtree::gheatmap(p,
+         metDA %>% filter(Compound %in% c("DIMBOA-Glc")) %>% 
+           filter(Treatment %in% "G") %>% 
+         dplyr::select(Strain, uMol) %>% 
+         distinct %>% 
+         as.data.frame() %>% column_to_rownames("Strain") ,
+         offset=0.1,
+         width=0.2,
+         colnames=TRUE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_gradient2(low = "white", mid = "gold", high ="darkred", midpoint = 500) +
+  labs(title = "MBOA concentration",
+       subtitle = "all strains") +
+ guides(color=FALSE) #+
+```
+
+```{r, warning=F, echo=F, message=F}
+metDA_bar_phylo <- metDA %>% filter(Treatment %in% "G") %>% dplyr::select(Strain, Compound, uMol) %>% pivot_wider(names_from = Compound, values_from = uMol) 
+
+metDA_bar_phylo$Strain <- gsub("NBC", "KHB019", metDA_bar_phylo$Strain)
+metDA_bar_phylo %<>% as.data.frame()
+
+metDA_phylo <- metDA %>% filter(Treatment %in% "G") %>% filter(Strain != "T0") %>% filter(!Compound %in% c("HDM2BOA-Glc", "DIM2BOA-Glc")) %>% dplyr::select(Strain, Compound, uMol)
+metDA_phylo$Strain <- gsub("NBC", "KHB019", metDA_phylo$Strain)
+```
+
+```{r, warning=F, echo=F, message=F}
+p_metDA_DMG <- metDA_phylo %>% 
+        ggplot(aes(y = Strain, x = uMol)) +
+        geom_bar(aes(fill = Compound), stat = "identity") +
+        xlim(0, 800)+
+        scale_fill_manual(values = level_cols_Compound)+
+        theme_tree2() +
+        labs(x = "Concentration [uM]")
+
+plot_tax_metDA_DMG_micro <- p_metDA_DMG %>% 
+  insert_left(p_host_simple, width = 0.5)  
+
+
+plot_tax_metDA_DMG_micro
+
+# ggsave(plot = plot_tax_metDA_DMG_micro, filename = "plot_tax_metDA_DMG_micro_NBC.pdf", width = 15, height = 15, dpi = 300, scale = 1, units = "cm")
+#  
+# ggsave(plot = plot_tax_metDA_DMG_micro, filename = "plot_tax_metDA_DMG_micro_NBC.svg",width = 15, height = 15, dpi = 300, scale = 1, units = "cm")
+```
+
+
+# Metabolite categories for comparative genomics
+
+```{r, warning=F, echo=F, message=F}
+met_all <- rbind(met %>% dplyr::select(-Nr, -Nr.x, -T, -n, -Nr.y) %>% dplyr::rename(Slope = slope_all, IS.Area = 'IS Area', Detection.Flags = 'Detection Flags'), metDA %>% dplyr::select(-X.1, -X.x, -X., -random, -Nr.x, -Nr.y, -X0, -Treat, -X.y) %>% dplyr::rename('%Dev' = X.Dev))
+```
+
+```{r, warning=F, echo=F, message=F}
+met_all_quant <- met_all %>% dplyr::select(Strain, Treatment, Compound, uMol) %>% filter(Treatment != "DMSO") %>% mutate(Treatment_Compound = interaction(Treatment, Compound, sep = "_")) %>% dplyr::select(-Treatment, -Compound) %>% filter(!Strain %in% c("t0", "T0")) %>% filter(Treatment_Compound != "MBOA_AAMPO") %>% unique() %>% replace(is.na(.), 0) %>%  pivot_wider(names_from = Treatment_Compound, values_from = uMol, values_fn = mean)
+```
+
+**MBOA**
+```{r, warning=F, echo=F, message=F}
+## MBOA metabolization < 400
+max_MBOA <- met_all_quant$MBOA_MBOA %>% max()
+# [1] 825.9893
+
+## AMPO formation > 2.5
+max_AMPO <-met_all_quant$MBOA_AMPO %>% max()
+# [1] 825.9893
+
+## HMPAA formation > 25
+max_HMPAA <-met_all_quant$MBOA_HMPAA %>% max()
+# [1] 70.50679
+
+tibble(max_MBOA, max_AMPO, max_HMPAA) %>% knitr::kable(caption = "MBOA metabolisation")
+```
+
+**DIMBOA-Glc metabolization**
+```{r, warning=F, echo=F, message=F}
+## DIMBOA-Glc metabolization < 400 (LMI1x 322 uM)
+max_DIMBOA_Glc <- met_all_quant$`G_DIMBOA-Glc` %>% max()
+# [1] 575.2392
+
+## MBOA formation > 40 (LMI1x 43.7 uM)
+max_MBOA <- met_all_quant$G_MBOA %>% max()
+# [1] 120.9501
+
+## AMPO formation DMG > 2.5
+max_AMPO <- met_all_quant$G_AMPO %>% max()
+# [1] 7.355668
+
+tibble(max_DIMBOA_Glc, max_MBOA, max_AMPO) %>% knitr::kable(caption = "DIMBOA-Glc metabolisation")
+```
+
+**Groups**
+```{r, warning=F, echo=F, message=F}
+met_all_quali <- met_all_quant %>%
+  mutate(MBOA_met = case_when(MBOA_MBOA > 400 ~ FALSE,
+                              MBOA_MBOA < 400 ~ TRUE)) %>%
+  mutate(MBOA_AMPO = case_when(MBOA_AMPO > 2.5 ~ TRUE,
+                               MBOA_AMPO < 2.5 ~ FALSE)) %>%
+  mutate(MBOA_HMPAA = case_when(MBOA_HMPAA > 15 ~ TRUE,
+                              MBOA_HMPAA < 15 ~ FALSE)) %>%
+  mutate(DIMBOA_Glc_met = case_when(`G_DIMBOA-Glc` > 400 ~ FALSE,
+                              `G_DIMBOA-Glc` < 400 ~ TRUE)) %>%
+  mutate(DMG_MBOA = case_when(G_MBOA > 40 ~ TRUE,
+                              G_MBOA < 40 ~ FALSE)) %>%
+  mutate(DMG_AMPO = case_when(G_AMPO > 2.5 ~ TRUE,
+                              G_AMPO < 2.5 ~ FALSE)) %>%
+  dplyr::select(Strain, MBOA_met, MBOA_AMPO, MBOA_HMPAA, DIMBOA_Glc_met, DMG_MBOA, DMG_AMPO) %>%    left_join(., database %>% dplyr::select(Strain_ID, AMPO_on_MBOA_plates), by = c("Strain" = "Strain_ID"))
+```
+
+# GROWTH MICROBACTERIA: TSB (Metabolite samples) & MM (Carbon source)
+```{r, include=FALSE}
+Strain_Data <- read_excel("Input/210513_experimental_design_Microbacteria_MRB_At_metabolites.xlsx", sheet = 5)
+Strain_Data 
+database <- read_excel("Input/210513_experimental_design_Microbacteria_MRB_At_metabolites.xlsx", sheet = 2)
+Strain_Data <- left_join(Strain_Data, database, by = c("Strain" = "Strain_ID")) %>% dplyr::select(-'old name', -'Possible_species/best_hit') 
+Strain_Data$Well_Plate <- interaction(Strain_Data$Well, Strain_Data$Plate, sep = "_")
+
+Strain_Data %<>% arrange(., desc(Strain))
+Strain_Data$Block <- rep(c(1:3), times = 64)
+```
+
+```{r, warning=FALSE, include=FALSE}
+results1 <- data_frame()
+
+# Provide a lookup table for plate information, treatments are spread accross sheets in the table to be read.
+# in the first column describe the plates and in the second column the experiment (rep(times = # plates - 2))
+treatlist <- data_frame("Treat" =
+              c("Dummy",
+                "Glc_30000_MM_B_2",
+                "Glc_30000_MM_A_2",
+                "Glc_30000_MM_B_1",
+                "Glc_30000_MM_A_1",
+                "MBOA_MM_B_2",
+                "MBOA_MM_A_2",
+                "MBOA_MM_B_1",
+                "MBOA_MM_A_1",
+                "DMSO_MM_B_2",
+                "DMSO_MM_A_2",
+                "DMSO_MM_B_1",
+                "DMSO_MM_A_1",
+                "MBOA_TSB_B_2",
+                "MBOA_TSB_A_2",
+                "MBOA_TSB_B_1",
+                "MBOA_TSB_A_1",
+                "DMSO_TSB_B_2",
+                "DMSO_TSB_A_2",
+                "DMSO_TSB_B_1",
+                "DMSO_TSB_A_1",
+                "no_TSB_MM_no_1",
+                "Dummy"),
+ "Replicate" = c("NULL", rep(c("2", "2","1", "1"), times = 5), "1", "NULL"), # times = all plates but without the dummy plates
+ "Plate" = c("NULL", rep(c("B", "A"), times = 10), "NULL", "NULL"), 
+# times = all plates but without the dummy plates
+ "Media" = c("NULL", rep("MM", times = 12), rep ("TSB", times =8), "TSB_MM", "NULL"),
+"Chem" = c("NULL", rep("Glucose", times = 4), rep("MBOA", times = 4), rep("DMSO", times = 4), rep("MBOA", times = 4), rep("DMSO", times = 4), "no", "NULL"), 
+"Run" = c("NULL", rep("R1", times = 21), "NULL"))
+
+
+#Initialize / clear df
+
+#Loop through sheets.
+
+for (i in 1:nrow(treatlist)) {
+  tmp <- read_excel("Input/Microbacteria_metabolite_210826_repe_data_reader.xlsx", sheet = i, range = "B26:CU70") %>%   # change for duration runs
+    dplyr::select(-`T° 600`) %>% # Drop Temperature
+    #pivot_longer(names_to = "Well", values_to = "Density") %>%  #Make long
+    gather(key = "Well", value = "Density", 2:ncol(.)) %>%
+    mutate(Treat = as.character(treatlist[i,1]), #Add treatment
+    Replicate = as.character(treatlist[i,2]),
+    Plate = as.character(treatlist[i,3]),
+    Media = as.character(treatlist[i,4]),
+    Chem = as.character(treatlist[i,5]),
+    Run = as.character(treatlist[i,6]),
+    Well_Plate = interaction(Well, Plate, sep = "_")) #Add Replicate
+results1 <- bind_rows(results1, tmp)
+}
+```
+
+2nd run was left for 1 cycle longer, therefore the same amount of cycles was kept
+
+```{r, warning=FALSE, include=FALSE}
+results2 <- data_frame()
+
+# Provide a lookup table for plate information, treatments are spread accross sheets in the table to be read.
+# in the first column describe the plates and in the second column the experiment (rep(times = # plates - 2))
+treatlist <- data_frame("Treat" =
+              c("Dummy",
+                "Glc_30000_MM_B_2",
+                "Glc_30000_MM_A_2",
+                "Glc_30000_MM_B_1",
+                "Glc_30000_MM_A_1",
+                "MBOA_MM_B_2",
+                "MBOA_MM_A_2",
+                "MBOA_MM_B_1",
+                "MBOA_MM_A_1",
+                "DMSO_MM_B_2",
+                "DMSO_MM_A_2",
+                "DMSO_MM_B_1",
+                "DMSO_MM_A_1",
+                "MBOA_TSB_B_2",
+                "MBOA_TSB_A_2",
+                "MBOA_TSB_B_1",
+                "MBOA_TSB_A_1",
+                "DMSO_TSB_B_2",
+                "DMSO_TSB_A_2",
+                "DMSO_TSB_B_1",
+                "DMSO_TSB_A_1",
+                "no_TSB_MM_no_1",
+                "Dummy"),
+ "Replicate" = c("NULL", rep(c("2", "2","1", "1"), times = 5), "1", "NULL"), # times = all plates but without the dummy plates
+ "Plate" = c("NULL", rep(c("B", "A"), times = 10), "NULL", "NULL"), 
+# times = all plates but without the dummy plates
+ "Media" = c("NULL", rep("MM", times = 12), rep ("TSB", times =8), "TSB_MM", "NULL"),
+"Chem" = c("NULL", rep("Glucose", times = 4), rep("MBOA", times = 4), rep("DMSO", times = 4), rep("MBOA", times = 4), rep("DMSO", times = 4), "no", "NULL"), 
+"Run" = c("NULL", rep("R2", times = 21), "NULL"))
+
+
+#Initialize / clear df
+
+#Loop through sheets.
+
+for (i in 1:nrow(treatlist)) {
+  tmp <- read_excel("Input/Microbacteria_metabolite_210930_Run2.xlsx", sheet = i, range = "B26:CU70") %>%   # change for duration runs
+    dplyr::select(-`T° 600`) %>% # Drop Temperature
+    #pivot_longer(names_to = "Well", values_to = "Density") %>%  #Make long
+    gather(key = "Well", value = "Density", 2:ncol(.)) %>%
+    mutate(Treat = as.character(treatlist[i,1]), #Add treatment
+    Replicate = as.character(treatlist[i,2]),
+    Plate = as.character(treatlist[i,3]),
+    Media = as.character(treatlist[i,4]),
+    Chem = as.character(treatlist[i,5]),
+    Run = as.character(treatlist[i,6]),
+    Well_Plate = interaction(Well, Plate, sep = "_")) #Add Replicate
+results2 <- bind_rows(results2, tmp)
+}
+```
+
+```{r, warning=FALSE, include=FALSE}
+results <- rbind(results1, results2)
+```
+
+```{r, warning=FALSE, include=FALSE}
+###
+###Get times based on difftime. 
+results %<>%
+  filter(Treat != "Dummy" ) %>%
+  filter(Treat != "Dummy") %>%
+  filter(Density != "NA") %>%
+  group_by(Replicate, Well_Plate, Treat) %>%
+  mutate(mins = difftime(Time, Time[1], units = "mins") %>% as.numeric(),
+         hrs = difftime(Time, Time[1], units = "hours") %>% as.numeric())  %>% 
+  ###Merge with metadata. Well Positions are Part of the stocklist (clean), other metadata comes from the ZmSphere.
+  left_join(., Strain_Data, by = "Well_Plate") # 
+
+results %<>% dplyr::select(-Well.y, -Plate.x, -Time, -Row, -Column) %>% dplyr::rename(Well = Well.x, Plate = Plate.y) %>%  as.data.frame() 
+
+results %<>% mutate(Row = Well %>% str_extract(.,"[A-H]"),
+                    Column = Well %>% str_extract(.,"[0-9]+") %>% as.numeric()) 
+
+```
+
+```{r, warning=FALSE, include=FALSE}
+###Make density increase relative to first timepoint
+results %<>%
+  filter(!Strain %in% c("Ignore","None")) %>%
+  group_by(Replicate, Well_Plate, Treat) %>%
+  mutate(Density_increase = Density - Density[1]) %>%
+  ungroup %>% as.data.frame()
+```
+
+```{r, warning=FALSE, include=FALSE}
+results_raw <- results
+```
+
+# Growth curves of all plates single treatments
+```{r, warning=FALSE, message=F, echo=F}
+results %>%  filter(Treat %in% "no_TSB_MM_no_1") %>% 
+  ggplot(aes(x=hrs, y= Density_increase)) +
+  # stat_summary(geom = "pointrange", fun.y = mean, fun.ymax = max, fun.ymin = min, alpha = 0.3) +
+  geom_line(aes(color = Run), size = 1) +
+  facet_grid(Row ~ Column, scales = "fixed") +
+  theme_bw() +
+  # ggtitle("Plate *no bacteria* - check contamination")+
+  labs(x = "Time [hours]",
+       y = "OD 600", 
+       title = "Empty plate",
+#       caption = "test",
+       subtitle = "control for contamination", 
+       color = "Run")
+```
+
+```{r, warning=FALSE, message=F, echo=F}
+results %>%  
+  filter(Media %in% "MM") %>% 
+  filter(!Strain %in% "no") %>% 
+  filter(!Strain %in% "NBC") %>% 
+  ggplot(aes(x=hrs, y= Density_increase)) +
+  # stat_summary(geom = "pointrange", fun.y = mean, fun.ymax = max, fun.ymin = min, alpha = 0.3) +
+  geom_line(aes(linetype = interaction(Run, Rep, Replicate), color = Chem), size = 1) +
+  facet_wrap(~ Strain, scales = "fixed") +
+  theme_bw() +
+  #scale_color_manual(values = c("cornflowerblue", "cornflowerblue", "darkred", "darkred")) +
+  # ggtitle("Plate *no bacteria* - check contamination")+
+  labs(x = "Time [hours]",
+       y = "OD 600", 
+       title = "Growth curves of all strains",
+       color = "Run")
+```
+
+```{r, warning=FALSE, message=F, echo=F}
+results %>%  filter(Media %in% "MM") %>% 
+  filter(Chem %in% c("DMSO", "MBOA")) %>% 
+  ggplot(aes(x=hrs, y= Density_increase, color = AMPO_on_MBOA_plates)) +
+  # stat_summary(geom = "pointrange", fun.y = mean, fun.ymax = max, fun.ymin = min, alpha = 0.3) +
+  geom_line(aes(linetype = interaction(Run, Rep, Replicate), color = Chem), size = 1, show.legend = FALSE) +
+  facet_wrap( ~ Strain, scales = "fixed") +
+  theme_bw() +
+  # ggtitle("Plate *no bacteria* - check contamination")+
+  labs(x = "Time [hours]",
+       y = "OD 600", 
+       title = "Variation: Glc_30000_MM_A_1 & Glc_30000_MM_A_2",
+#       caption = "test",
+       subtitle = "growth in mix - Plate A + Plate B", 
+       color = "Run")
+```
+
+# Calculate AUC 
+
+To quantify the total bacterial growth over time, we calculate the total area under the curve. This is done with the function "auc()" For comparison between treatments, the total AUC (calculated using density increase) and AUC_raw (calculated using raw density) is normalized with the AUC of the strain grown in the control treatment (no chemicals added, just normal growth media with DMSO). 
+
+```{r, warning=FALSE, include=FALSE, echo=F}
+results_AUC <- results %>% 
+  filter(Treat != "Dummy") %>% 
+  filter(!Strain %in% c("no", NA)) %>% 
+  # filter(!Treat %in% c("empty", "glycerol_stock")) %>% 
+  group_by(Strain, Well, Chem, Media, Plate, Replicate, Run) %>%
+  dplyr::summarize(AUC = auc(hrs, Density_increase), 
+            AUC_raw = auc(hrs, Density)) %>%
+  ungroup %>% 
+  mutate(Chem = as.factor(Chem),
+         Plate = as.factor(Plate),
+         Replicate = as.factor(Replicate),
+         Media = as.factor(Media),
+         Well = as.factor(Well),
+         Run = as.factor(Run)) %>% 
+  mutate(AUC_pos = abs(AUC)) %>% 
+  mutate(Strain_Well_Media_Chem_Plate_Replicate_Run = paste(Strain, Well, Media, Chem, Plate, Replicate, Run, sep = "_")) %>%
+  #Split by Replicate
+  base::split(., .$Strain_Well_Media_Chem_Plate_Replicate_Run) %>% #Make each strain / rep combination its own data.frane
+  # mutate(Well_Plate = paste(Well, Plate, sep = "_")) %>% 
+  map_dfr(~
+  mutate(.x, AUC_norm = AUC_pos / AUC_pos[length(AUC_pos)])) %>%
+  #in each df, divide the AUC by the last AUC value; since Control does not start with a number, it is the last treatment
+  # dplyr::select(-Replicate) %>% 
+  left_join(. , Strain_Data %>% 
+  dplyr::select(Strain, Phylum, Family, Genus, AMPO_on_MBOA_plates, Collection) %>% unique(), by = "Strain") %>% 
+  # dplyr::select(-Well.y, Plate.y) %>% 
+  # dplyr::rename(Well = Well.x, Plate = Plate.x) %>% 
+  unique() %>% 
+  as.data.frame() #transform into df
+
+
+## Save table with AUC
+#write_rds(results_AUC, paste0("results_AUC.rds"))
+```
+
+# Plotting AUC
+TSB and Minimal medium
+
+```{r, echo=F, warning=F, message=F, fig.width=20, fig.height=15,}
+results_AUC %>%  
+  ggplot(aes(x= interaction(as.factor(Chem), Media), y= AUC)) +
+  geom_boxplot(aes(fill = AMPO_on_MBOA_plates), position=position_dodge()) + 
+  geom_jitter(aes(shape = Run), width = 0.1) + 
+  ggpubr::stat_compare_means(label = "p.signif", method = "t.test", ref.group = "DMSO.MM", label.y.npc = 0.8) +
+  ylim(0, 60) +
+  # stat_summary(fun.data = give.n, geom = "text", fun = median, position = position_fill(0)) +
+  #scale_shape_manual(values = shapes_manual ) +
+  facet_wrap(~Strain, scales = "fixed") +
+  scale_fill_manual(values = c("cornflowerblue", "darkred")) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0.5)) +
+    labs(y = "AUC", 
+         x = "",
+         title = "Growth of strains in minimal media",
+         colour = "AMPO on plate")
+```
+
+
+### Heatmap growth in minimal media
+
+# TSB: MBOA tolerance
+
+```{r, echo=F, warning=F, message=F, fig.width=20, fig.height=15}
+results_AUC %>%  
+  filter(Media %in% "TSB") %>% 
+  ggplot(aes(x= interaction(as.factor(Chem)), y= AUC)) +
+  geom_boxplot(aes(fill = AMPO_on_MBOA_plates), position=position_dodge()) + 
+  geom_jitter(width = 0.1) + 
+  ggpubr::stat_compare_means(label = "p.signif", method = "t.test", ref.group = "DMSO", label.y = 60) +
+  # ylim(0, 80) +
+  #scale_shape_manual(values = shapes_manual ) +
+  facet_wrap(~Strain, scales = "fixed") +
+  scale_fill_manual(values = c("cornflowerblue", "darkred")) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0.5)) +
+    labs(y = "AUC", 
+         title = "Growth of strains in TSB",
+         colour = "AMPO on plate")
+```
+
+Calculate growth reduction in MM MBOA compared to MM DMSO 
+```{r, include=FALSE}
+results_AUC_tol_MM <- results_AUC %>% filter(Media %in% "MM") %>% 
+  dplyr::select(Strain, Chem, Media, Plate, Replicate, Well, AUC, AMPO_on_MBOA_plates, Run) %>% 
+  #mutate(Media_Chem = interaction(Media, Chem)) %>% 
+  distinct() %>%  
+  pivot_wider(names_from = Chem, values_from = AUC) 
+
+# results_AUC_tol_MM %<>% mutate(Plate_Replicate = (interaction(Plate, Replicate)))
+
+results_AUC_tol_MM$MBOA_DMSO_per <- 100 / (results_AUC_tol_MM$DMSO / results_AUC_tol_MM$MBOA) 
+
+# results_AUC_tol_MM$MBOA_DMSO_diff <- (results_AUC_tol_MM$DMSO / results_AUC_tol_MM$MBOA) * 100
+```
+
+```{r, include=FALSE}
+results_AUC_tol_MM <- left_join(results_AUC_tol_MM, results_AUC %>% dplyr::select(Strain, Collection), by = "Strain") %>% unique()
+```
+
+```{r, echo=F, warning=F, message=F, fig.width=20, fig.height=15}
+results_AUC_tol_MM %>%  
+  filter(Strain != "NBC") %>% 
+  filter(!MBOA_DMSO_per > 7000) %>% 
+  filter(!MBOA_DMSO_per < 0) %>% 
+  # filter(Media %in% "MM") %>% 
+  ggplot(aes(x= interaction(Strain, AMPO_on_MBOA_plates), y= MBOA_DMSO_per)) +
+  geom_boxplot(aes(fill = AMPO_on_MBOA_plates), position=position_dodge()) + 
+  geom_jitter(width = 0.1) + 
+  # ggpubr::stat_compare_means(label = "p.signif", method = "t.test", ref.group = "DMSO", label.y = 60) +
+  # ylim(0, 100) +
+  #scale_shape_manual(values = shapes_manual ) +
+  # facet_wrap(~Strain, scales = "fixed") +
+  scale_fill_manual(values = c("cornflowerblue", "darkred")) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0.5)) +
+    labs(y = "AUC % MBOA/DMSO",
+         x = "",
+         title = "Growth of strains in MM",
+         fill = "AMPO on plate")
+```
+
+Statistics MBOA tolerance in MM
+
+```{r, include=FALSE}
+aov_pheno_MM <- results_AUC_tol_MM %>% aov(data = ., MBOA_DMSO_per ~ AMPO_on_MBOA_plates)
+summary(aov_pheno_MM) %>% pander()
+
+aov_collection_MM <- results_AUC_tol_MM %>% aov(data = ., MBOA_DMSO_per ~ Collection)
+summary(aov_collection_MM) %>% pander()
+
+aov_pheno_strain_MM <- results_AUC_tol_MM %>% aov(data = ., MBOA_DMSO_per ~ AMPO_on_MBOA_plates*Strain)
+summary(aov_pheno_strain_MM) %>% pander()
+
+aov_pheno_strain_MM_col <- results_AUC_tol_MM %>% aov(data = ., MBOA_DMSO_per ~ AMPO_on_MBOA_plates*Strain*Collection)
+summary(aov_pheno_strain_MM_col) %>% pander()
+
+aov_pheno_strain_col <- results_AUC_tol_MM %>% aov(data = ., MBOA_DMSO_per ~ AMPO_on_MBOA_plates*Collection)
+summary(aov_pheno_strain_col) %>% pander()
+```
+
+# Phylogenetic tree
+
+```{r, include=FALSE}
+results_AUC_mean_MM <- results_AUC %>% filter(Media %in% "MM") %>% group_by(Strain, Chem) %>%
+  dplyr::summarise(mean = mean(AUC), n = n()) %>% 
+  dplyr::rename(AUC_mean = mean,
+                Replicates = n)
+
+results_AUC_mean_MM$Strain <- gsub("NBC", "KHB019", results_AUC_mean_MM$Strain)
+
+results_AUC_mean_MM %<>% mutate(AUC_mean = as.numeric(AUC_mean))
+# results_AUC_mean_MBOA <- results_AUC_mean %>% filter(Chem %in% "MBOA") %>% dplyr::select(-Chem)
+```
+
+```{r, include=FALSE}
+results_AUC_mean_MM_MBOA <- results_AUC_mean_MM %>% filter(Chem %in% "MBOA") 
+results_AUC_mean_MM_MBOA_pos <- results_AUC_mean_MM_MBOA
+results_AUC_mean_MM_MBOA_pos$AUC_mean <- ifelse(results_AUC_mean_MM_MBOA_pos$AUC_mean < 0, 0, results_AUC_mean_MM_MBOA_pos$AUC_mean)
+```
+
+```{r, echo=F, warning=F, message=F}
+Fig.S11.MBOA_Micro_carbon <- ggtree::gheatmap(p_host_simple,
+         results_AUC_mean_MM_MBOA_pos %>%
+         # mutate(AUC = if_else(MBOA_DMSO_per < 0, 0, MBOA_DMSO_per)) %>% 
+        # mutate(MBOA_DMSO_per = log10(MBOA_DMSO_per)) %>% 
+         # filter(MBOA_DMSO_per < 0) %>% 
+         # mutate(Chem = as.character(Conc)) %>%  
+         dplyr::select(Strain, AUC_mean) %>% 
+         # distinct %>% tidyr::spread(Chem, AUC_mean) %>% 
+         as.data.frame() %>% column_to_rownames("Strain") ,
+         offset=0.25,
+         width=0.1,
+         colnames=FALSE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_gradient2(low = "black", mid = "khaki", high ="darkred", midpoint = 1) +
+  labs(x = "",
+       y = "", 
+       shape = "Host plant",
+       color = "AMPO phenotype",
+       fill = "AUC")
+
+Fig.S11.MBOA_Micro_carbon
+
+# ggsave(plot = Fig.S11.MBOA_Micro_carbon, filename = "Fig.S11.MBOA_Micro_carbon.pdf", width = 15, height = 15, dpi = 300, scale = 1, units = "cm")
+# 
+# ggsave(plot = Fig.S11.MBOA_Micro_carbon, filename = "Fig.S11.MBOA_Micro_carbon.svg", width = 15, height = 15, dpi = 300, scale = 1, units = "cm")
+```
+
+# COMBINED TREE
+
+```{r, echo=F, warning=F, message=F}
+met %>% filter(Compound %in% c("MBOA", "HMPAA", "AMPO")) %>% 
+  mutate(Compound = factor(Compound, levels = c("MBOA", "HMPAA", "AMPO"))) %>% 
+  ggplot(aes(x= Strain, y = uMol)) + 
+  geom_bar(stat = "summary") + 
+  facet_grid(Treatment~Compound) +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) +
+  labs(title = "MBOA metabolites")
+```
+
+```{r, echo=F, warning=F, message=F, include=F}
+#HMPAA 
+met %>% filter(Compound %in% c("HMPAA")) %>%  dplyr::summarize(conc_max = max(uMol)) 
+met %>% filter(Compound %in% c("HMPAA")) %>%  filter(Treatment %in% "DMSO") %>% dplyr::summarize(conc_max = max(uMol)) 
+
+met %>% filter(Compound %in% c("HMPAA")) %>%  dplyr::summarize(conc_min = min(uMol))
+met %>% filter(Compound %in% c("HMPAA")) %>% filter(uMol > 0) %>% dplyr::summarize(conc_min = min(uMol))
+met %>% filter(Compound %in% c("HMPAA")) %>% filter(uMol > 5) %>% dplyr::select(Strain, Treatment)
+
+met %>% filter(Compound %in% c("AMPO")) %>% filter(uMol > 5) %>% dplyr::select(Strain, Treatment)
+met %>% filter(Compound %in% c("AMPO")) %>% filter(uMol < 5) %>% dplyr::select(Strain, Treatment)
+```
+
+
+```{r, echo=F, warning=F, message=F, include=F}
+metDA %>% 
+  filter(Treatment %in% c("G", "D")) %>% 
+  filter(Compound %in% c("DIMBOA-Glc", "MBOA", "AMPO")) %>% 
+  mutate(Compound = factor(Compound, levels = c("DIMBOA-Glc", "MBOA", "AMPO"))) %>% 
+  ggplot(aes(x= Strain, y = uMol)) + 
+  geom_bar(stat = "summary") + 
+  facet_grid(Treatment~Compound) +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) +
+  labs(title = "DIMBOA-Glc metabolites")
+```
+
+Thresholds for qualitative analysis
+- weak MBOA-degraders: >30% of MBOA degraded compared to the control)
+- strong MBOA-degraders: (>90% of MBOA degraded, Fig. 3a). 
+strong AMPO-formers (100 - 10 %) 
+weak AMPO-formers’, <10% of max. AMPO forming strain)
+(0.01 µM, limit of detection).
+
+
+```{r, echo=F, warning=F, message=F, include=F}
+met_MBOA_NBC <- met %>% filter(Strain %in% "NBC") %>% filter(Treatment %in% "MBOA") %>% filter(Compound %in% "MBOA")
+met_MBOA_NBC$uMol
+# 343.0771 uMol
+
+# 70% 
+MBOA_treshold_weak <- (met_MBOA_NBC$uMol / 100) * 70 
+MBOA_treshold_weak
+# 240.154
+
+# 90 %
+MBOA_treshold_strong <- (met_MBOA_NBC$uMol / 100) * 10
+MBOA_treshold_strong
+# 34.30771
+
+# 0.1 %
+MBOA_treshold_LOD <- (met_MBOA_NBC$uMol / 100) * 1
+MBOA_treshold_LOD
+```
+
+```{r, echo=F, warning=F, message=F, include=F}
+met_AMPO_max <- met %>% filter(Treatment %in% "MBOA") %>% filter(Compound %in% c("AMPO")) %>%  dplyr::summarize(conc_max = max(uMol)) 
+met_AMPO_max$conc_max
+# 471.5786
+
+# 10% of max
+AMPO_treshold_strong <- (met_AMPO_max$conc_max / 100) * 10
+AMPO_treshold_strong
+# 47.15786
+
+# 0.1 % of max
+AMPO_treshold_weak <- (met_AMPO_max$conc_max / 100) * 0.1
+AMPO_treshold_weak
+# 0.4715786
+```
+
+```{r, echo=F, warning=F, message=F, include=F}
+met_HMPAA_max <- met %>% filter(Treatment %in% "MBOA") %>% filter(Compound %in% c("HMPAA")) %>%  dplyr::summarize(conc_max = max(uMol)) 
+met_HMPAA_max$conc_max
+# 471.5786
+
+# 10% of max
+HMPAA_treshold_strong <- (met_HMPAA_max$conc_max / 100) * 10
+HMPAA_treshold_strong
+# 4.406674
+
+# 0.1 % of max
+HMPAA_treshold_weak <- (met_HMPAA_max$conc_max / 100) * 0.1
+HMPAA_treshold_weak
+# 0.04406674
+```
+
+```{r, echo=F, warning=F, message=F, include=F}
+met_DIMBOAGlc_NBC <- metDA %>% filter(Strain %in% "NBC") %>% filter(Treatment %in% "G") %>% filter(Compound %in% "DIMBOA-Glc")
+met_DIMBOAGlc_NBC$uMol
+# 515.6157
+
+# 70% 
+DIMBOAGlc_treshold_weak <- (met_DIMBOAGlc_NBC$uMol / 100) * 70 
+DIMBOAGlc_treshold_weak
+# 360.931
+
+# 90 %
+DIMBOAGlc_treshold_strong <- (met_DIMBOAGlc_NBC$uMol / 100) * 10
+DIMBOAGlc_treshold_strong
+# 51.56157
+
+# 0.1 %
+DIMBOAGlc_treshold_LOD <- (met_DIMBOAGlc_NBC$uMol / 100) * 0.1
+DIMBOAGlc_treshold_LOD
+
+# 0.5156157
+```
+
+```{r, echo=F, warning=F, message=F, include=F}
+metDA_MBOA_max <- met %>% filter(Treatment %in% "MBOA") %>% filter(Compound %in% c("MBOA")) %>%  dplyr::summarize(conc_max = max(uMol)) 
+metDA_MBOA_max$conc_max
+# 516.2433
+
+# 10% of max
+MBOA.DG_treshold_strong <- (metDA_MBOA_max$conc_max / 100) * 10
+MBOA.DG_treshold_strong
+# 51.62433
+
+# 0.1 % of max
+MBOA.DG_treshold_weak <- (metDA_MBOA_max$conc_max / 100) * 0.1
+MBOA.DG_treshold_weak
+# 0.5162433
+```
+
+```{r, echo=F, warning=F, message=F, include=F}
+met %>% filter(Strain %in% "Leaf151") %>% filter(Compound %in% c("MBOA", "HMPAA", "AMPO")) %>% filter(Treatment %in% "MBOA")
+
+met %<>% as.data.frame() %>% filter(!RT %in% "NA")
+```
+
+```{r, echo=F, warning=F, message=F, include=F}
+met <- met %>% as.data.frame() %>% mutate(Compoud = as.factor(Compound))
+met$Binary <- NA #add new empty col
+
+# met$uMol[is.na(met$uMol)] = 0
+
+met$Binary[met$Compoud=="HMPAA" & met$uMol<HMPAA_treshold_weak] <- "no" # no HMPAA detected
+met$Binary[met$Compoud=="HMPAA" & met$uMol< HMPAA_treshold_strong & met$uMol > HMPAA_treshold_weak] <- "HMPAA_low" #HMPAA not degraded & "MBOA high"
+met$Binary[met$Compoud=="HMPAA" & met$uMol> HMPAA_treshold_strong] <- "HMPAA_high" #MBOA not degraded & "MBOA high"
+
+met$Binary[met$Compoud=="AMPO" & met$uMol< AMPO_treshold_weak] <- "no" # no AMPO detected
+met$Binary[met$Compoud=="AMPO" & met$uMol<AMPO_treshold_strong & met$uMol>AMPO_treshold_weak+0.001] <- "AMPO_low" #AMPO not degraded & "MBOA high"
+met$Binary[met$Compoud=="AMPO" & met$uMol>AMPO_treshold_strong] <- "AMPO_high" #AMPO not degraded & "MBOA high"
+
+met$Binary[met$Compoud=="MBOA" & met$uMol<MBOA_treshold_strong] <- "no" # no MBOA detected
+met$Binary[met$Compoud=="MBOA" & met$uMol<MBOA_treshold_weak & met$uMol>MBOA_treshold_strong] <- "MBOA_low" #MBOA not degraded & "MBOA high"
+met$Binary[met$Compoud=="MBOA" & met$uMol>MBOA_treshold_weak] <- "MBOA_high" #MBOA not degraded & "MBOA high"
+
+metDA <- metDA %>% filter(Treatment %in% "G") %>% as.data.frame() %>% mutate(Compoud = as.factor(Compound))
+metDA$Binary <- NA #add new empty col
+
+metDA$Binary[metDA$Compoud=="DIMBOA-Glc" & metDA$uMol<DIMBOAGlc_treshold_strong] <- "no" # no MBOA detected
+metDA$Binary[metDA$Compoud=="DIMBOA-Glc" & metDA$uMol<DIMBOAGlc_treshold_weak & metDA$uMol>DIMBOAGlc_treshold_strong] <- "DIMBOA-Glc_low" #MBOA not degraded & "MBOA high"
+metDA$Binary[metDA$Compoud=="DIMBOA-Glc" & metDA$uMol>DIMBOAGlc_treshold_weak] <- "DIMBOA-Glc_high" #MBOA not degraded & "MBOA high"
+
+metDA$Binary[metDA$Compoud=="MBOA" & metDA$uMol<MBOA.DG_treshold_weak] <- "no" # no MBOA detected
+metDA$Binary[metDA$Compoud=="MBOA" & metDA$uMol<MBOA.DG_treshold_strong & metDA$uMol>MBOA.DG_treshold_weak] <- "MBOA_low" #MBOA not degraded & "MBOA high"
+metDA$Binary[metDA$Compoud=="MBOA" & metDA$uMol>MBOA.DG_treshold_strong] <- "MBOA_high" #MBOA not degraded & "MBOA high"
+```
+
+```{r, echo=F, warning=F, message=F, include=F}
+results_AUC_mean_MM_MBOA_pos %>% ggplot(aes(x = Strain, y = AUC_mean)) + geom_bar(stat = "summary")
+```
+
+```{r, echo=F, warning=F, message=F, include=F}
+results_AUC_mean_MM_MBOA %>% filter(Strain %in% c("LWH11", "Leaf320"))
+
+results_AUC_mean_MM_MBOA_max <- results_AUC_mean_MM_MBOA %>% as.data.frame() %>%  dplyr::summarize(conc_max = max(AUC_mean)) 
+results_AUC_mean_MM_MBOA_max$conc_max
+# 516.2433
+
+# 10% of max
+results_AUC_mean_MM_MBOA_max_treshold <- (results_AUC_mean_MM_MBOA_max$conc_max / 100) * 20
+
+results_AUC_mean_MM_MBOA %<>% mutate(Binary = case_when(AUC_mean < results_AUC_mean_MM_MBOA_max_treshold ~ "no growth",
+                                                           AUC_mean > results_AUC_mean_MM_MBOA_max_treshold ~ "growth"))
+```
+
+
+Tree with AMPO Phenotype on plates
+
+```{r, warning=F, echo=F, message=F}
+tree_plate <- ggtree::gheatmap(p_host_simple + new_scale_fill(),
+         metadata_tree %>% 
+         dplyr::select(Strain, AMPO_on_MBOA_plates) %>% 
+           dplyr::rename('Plate assay' = AMPO_on_MBOA_plates) %>% 
+         distinct %>% 
+         as.data.frame() %>% column_to_rownames("Strain"),
+         offset=0.2,
+         width=0.1,
+         colnames=TRUE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_manual(values = c("lightgoldenrod", "darkred")) +
+  labs(fill = "AMPO phenotype")
+
+```
+
+Tree as above with MBOA metabolites
+
+```{r, echo=F, warning=F, message=F}
+tree_plate_MBOA <- ggtree::gheatmap(tree_plate + new_scale_fill(),
+         met %>% filter(Compound %in% c("MBOA", "HMPAA", "AMPO")) %>% 
+         filter(Treatment %in% "MBOA") %>% 
+         mutate(Compound = factor(Compound, levels = c("MBOA", "AMPO", "HMPAA"))) %>% 
+         # mutate(Binary = factor(Binary, levels = c("MBOA high", "MBOA low", "AMPO high", "AMPO low", "HMPAA high", "HMPAA low", "not detected"))) %>% 
+         # filter(!Binary %in% c("AMPO low", "HMPAA low")) %>% 
+         dplyr::select(Strain, Compound, Binary) %>% unique() %>% 
+         dplyr::select(Strain, Compound, Binary) %>% tidyr::spread(Compound, Binary) %>% 
+         distinct %>% 
+         as.data.frame() %>% column_to_rownames("Strain") ,
+         offset=0.25,
+         width=0.3,
+         colnames=TRUE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_manual(values = c( "darkred", "white", "gold2", "white", "darkblue", "white"), na.value = "white") +
+  # labels = c( "AMPO high", "AMPO low", "MBOA high", "MBOA low", "HMPAA high", "HMPAA low", "not detected"), +
+  labs(#x = "Benzoxazinoid",
+       #y = "Relative AUC", 
+       colour = "AMPO phenotype",
+       shape = "Host plant",
+       fill = "Concentration") 
+
+#dev.off()
+```
+
+Tree as above with DIMBOA-Glc metabolites 
+
+```{r, echo=F, warning=F, message=F}
+tree_plate_MBOA_DMG <- ggtree::gheatmap(tree_plate_MBOA + new_scale_fill(),
+         metDA %>% filter(Treatment %in% c("G")) %>% 
+           filter(Compound %in% c("DIMBOA-Glc", "MBOA")) %>% 
+           filter(!uMol %in% 0.00000000) %>%
+           filter(!uMol > 600) %>%
+           mutate(Compound = factor(Compound, levels = c("DIMBOA-Glc", "MBOA"))) %>% 
+         dplyr::select(Strain, Compound, Binary) %>% tidyr::spread(Compound, Binary) %>% 
+         distinct %>% 
+         as.data.frame() %>% column_to_rownames("Strain") ,
+         offset=0.37,
+         width=0.2,
+         colnames=TRUE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_manual(values = c("darkorange2",  "orange", "darkblue", "#555CCB", "white"), na.value = "white")+
+  labs(#x = "Benzoxazinoid",
+       #y = "Relative AUC", 
+       colour = "AMPO phenotype",
+       shape = "Host plant",
+       fill = "Concentration") 
+
+
+```
+
+```{r, echo=F, warning=F, message=F}
+tree_plate_MBOA_DMG_carbon <- ggtree::gheatmap(tree_plate_MBOA_DMG + new_scale_fill(),
+                                        results_AUC_mean_MM_MBOA %>%
+         dplyr::select(Strain, Binary) %>% 
+         dplyr::rename('C-source' = Binary) %>% 
+         as.data.frame() %>% column_to_rownames("Strain") ,
+         offset=0.46,
+         width=0.1,
+         colnames=TRUE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         # colnames_level = NULL,
+         hjust =1) +
+  scale_fill_manual(values = c("khaki4",  "white"))+
+  labs(x = "",
+       y = "", 
+       shape = "Host plant",
+       color = "AMPO phenotype",
+       fill = "AUC")
+
+
+```
+
+```{r, echo=F, warning=F, message=F}
+tree_plate_MBOA_DMG_carbon_OG <- ggtree::gheatmap(tree_plate_MBOA_DMG_carbon + new_scale_fill(),
+         met_OG_selected %>% 
+         distinct %>% 
+         as.data.frame() %>% column_to_rownames("Strain"),
+         offset=0.52,
+         width=0.5,
+         colnames=TRUE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_manual(values = c("gray100", "gray80", "gray60", "gray40", "gray20", "white")) +
+  labs(fill = "Orthogroup copies")
+
+tree_plate_MBOA_DMG_carbon_OG
+
+# ggsave(plot = tree_plate_MBOA_DMG_carbon_OG, filename = "tree_plate_MBOA_DMG_carbon_OG.pdf", width = 23, height = 20, dpi = 300, scale = 1, units = "cm")
+# # 
+# ggsave(plot = tree_plate_MBOA_DMG_carbon_OG, filename = "tree_plate_MBOA_DMG_carbon_OG.svg", width = 26, height = 20, dpi = 300, scale = 1, units = "cm")
+```
+
+```{r, warning=F, echo=F, message=F}
+sessionInfo()
+```
+
