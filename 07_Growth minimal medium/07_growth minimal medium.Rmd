@@ -1,0 +1,337 @@
+---
+title: "Growth minimal medium"
+subtitle: "Thoenen_et_al_Bacteria_BX_metabolization"
+author: "Lisa Thönen"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    fig_caption: yes
+    toc: true
+    toc_float: true
+    theme: cerulean
+    code_folding: show
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=F, echo=F, message=F}
+rm(list = ls())
+```
+
+```{r, warning=F, echo=F, message=F}
+# install.packages("MESS")
+# #Plotly to annotate plots and explore them
+# #install.packages("plotly")
+# install.packages("metacoder")
+# 
+# #lme4 and lmertest for stats, multcomp and lsmeans for posthoc
+# install.packages("lme4")
+# install.packages("lmerTest")
+# install.packages("multcomp")
+# install.packages("emmeans")
+# install.packages("magrittr")
+# install.packages("readxl")
+# install.packages("lme4")
+# install.packages("lmerTest")
+# install.packages("multcomp")
+# install.packages("emmeans")
+# 
+# #Formatting and reading tools
+# install.packages("magrittr")
+# install.packages("tidyverse")
+# install.packages("readxl")
+# install.packages("lubridate")
+# install.packages("broom")
+# install.packages("dplyr")
+# install.packages("tidyr")
+# install.packages("stringr")
+# install.packages("readr")
+# install.packages("purrr")
+# 
+# #Plotstuff
+# install.packages("ggthemes")
+# install.packages("ggforce")
+# install.packages("KEGGREST")
+# install.packages("randomForest")
+# install.packages("ggplot2")
+# install.packages("rstatix")
+```
+
+```{r, warning=F, echo=F, message=F}
+#MESS for AUC function
+library("MESS")
+#Plotly to annotate plots and explore them
+#library("plotly")
+
+library("metacoder")
+
+#lme4 and lmertest for stats, multcomp and lsmeans for posthoc
+library("lme4")
+library("lmerTest")
+library("multcomp")
+library("emmeans")
+#Formatting and reading tools
+library("magrittr")
+#library("tidyverse")
+library("readxl")
+library("lubridate")
+library("broom")
+library("dplyr")
+library("tidyr")
+library("stringr")
+library("readr")
+library("purrr")
+library("rstatix")
+### the dplyr package gets overwritten by other packages so often it is necessary to load it specifically again when needed for exapmle like that: dplyr::select
+#Plotstuff
+library("ggthemes")
+library("ggforce")
+#library("KEGGREST")
+#library("randomForest")
+library("ggpubr")
+library("ggbeeswarm")
+
+```
+
+```{r, warning=F, echo=F, message=F}
+Strain_Data <- read.csv("Input/Strain_Data.csv")
+
+Strain_Data$Well_Plate <- interaction(Strain_Data$Well, Strain_Data$Plate, sep = "_")
+Strain_Data %<>%  dplyr::select(-Strain) %>%  dplyr::rename(Strain = Strain_pure)
+```
+
+```{r, warning=F, echo=F, message=F}
+results <- data_frame()
+
+# Provide a lookup table for plate information, treatments are spread accross sheets in the table to be read.
+# in the first column describe the plates and in the second column the experiment (rep(times = # plates - 2))
+treatlist1 <- data_frame("Treat" =
+              c("Dummy1", #1
+                "DMSO_500__pure_strains_TSB",
+                "MBOA_500_pure_strains_TSB",
+                "DMG_500_pure_strains_TSB",
+                "MBOA_2500_pure_strains_TSB",
+                "DMG_2500_pure_strains_TSB",
+                "DMSO_minimal_media",
+                "MBOA_500_minimal_media",
+                "DMG_500_minimal_media",
+                "Glucose_500_minimal_media",
+                "MBOA_2500_minimal_media",
+                "DMG_2500_minimal_media",
+                "Glucose_2500_minimal_media",
+                "Glucose_30000_minimal_media",
+                "Media_TSB_MM",
+                "Dummy2"),
+ "Replicate" = c("NULL", rep("REP2", times = 14), "NULL"),
+ "Plate" = c("NULL", rep("metabolite_plate", times = 14),  "NULL"),
+ "Media" = c("NULL", rep ("TSB", times = 5), rep ("MM", times =8), "TSB_MM", "NULL"),
+"Chem" = c("NULL", "DMSO_500", "MBOA_500", "DMG_500", "MBOA_2500", "DMG_2500", "DMSO_2500", "MBOA_500", "DMG_500", "Glc_500", "MBOA_2500", "DMG_2500", "Glc_2500", "Glc_30000", "no", "NULL"))
+
+
+#Initialize / clear df
+
+#Loop through sheets.
+
+for (i in 1:nrow(treatlist1)) {
+  tmp <- read_excel("Input/Growth_minimal_media.xlsx", sheet = i, range = "B26:CU68") %>% 
+    # as.data.frame() %>% # change for duration runs
+    dplyr::select(-2) %>% # Drop Temperature
+    #pivot_longer(names_to = "Well", values_to = "Density") %>%  #Make long
+    gather(key = "Well", value = "Density", 2:ncol(.)) %>%
+    mutate(Treat = as.character(treatlist1[i,1]), #Add treatment
+    Rep = as.character(treatlist1[i,2]),
+    Plate = as.character(treatlist1[i,3]),
+    Media = as.character(treatlist1[i,4]),
+    Chem = as.character(treatlist1[i,5]),
+    Well_Plate = interaction(Well, Plate, sep = "_")) #Add Replicate
+results <- bind_rows(results, tmp)
+}
+```
+
+```{r, warning=F, echo=F, message=F}
+###
+###Get times based on difftime. 
+results %<>%
+  filter(Treat != "Dummy1" ) %>%
+  filter(Treat != "Dummy2") %>%
+  filter(Density != "NA") %>% 
+  mutate(mins = difftime(Time, Time[1], units = "mins") %>% as.numeric(),
+         hrs = difftime(Time, Time[1], units = "hours") %>% as.numeric()) %>% 
+  left_join(., Strain_Data, by = "Well_Plate")
+  ###Merge with metadata. Well Positions are Part of the stocklist (clean), other metadata comes from the ZmSphere.
+  
+```
+
+```{r, warning=F, echo=F, message=F}
+results %<>% dplyr::select(-Well.x, -Plate.x, -Time) %>% dplyr::rename(Well = Well.y, Plate = Plate.y) %>%  as.data.frame() 
+```
+
+```{r, warning=F, echo=F, message=F}
+##Bind results from june7
+# results %<>% bind_rows(., results3)
+#rm(results_subset_june7)
+
+
+###Make density increase relative to first timepoint
+results %<>%
+  filter(!Strain %in% c("Ignore","None")) %>%
+  group_by(Rep, Well_Plate, Treat) %>%
+  mutate(Density_increase = Density - Density[1]) %>%
+  ungroup %>% as.data.frame()
+```
+
+```{r, warning=F, echo=F, message=F}
+results_raw <- results
+```
+
+```{r, warning=F, echo=F, message=F}
+results %<>% mutate(Row = Well %>% str_extract(.,"[A-H]"),
+                    Col = Well %>% str_extract(.,"[0-9]+") %>% as.numeric())
+```
+
+```{r, warning=F, echo=F, message=F}
+results %<>% mutate(Strain = gsub("_m", "", Strain))
+```
+
+```{r, warning=F, echo=F, message=F}
+#write_rds(results, paste0("results_comboRun2.rds"))
+```
+
+
+# Growth curves
+This plate only contains medium to check for contamination in the run. 
+
+```{r, warning=F, echo=F, message=F, fig.dim=c(15,18)}
+results %>%  
+  filter(Treat %in% c("Media_TSB_MM")) %>% 
+  filter(!Row %in% NA) %>% 
+  ggplot(aes(x=hrs, y= Density_increase, color = Treat)) +
+  geom_line() +
+  facet_grid(Row ~ Col, scales = "fixed") +
+  theme_bw() +
+  labs(x = "Time [hours]",
+       y = "OD 600", 
+       title = "empty",
+#       caption = "test",
+       subtitle = "check for contamination", 
+       color = "Run")
+```
+
+```{r, warning=F, echo=F, message=F}
+results %>%  filter(Treat %in% c("DMSO_minimal_media", "MBOA_500_minimal_media", "MBOA_2500_minimal_media", "Glucose_30000_minimal_media")) %>% 
+  mutate(Treat = factor(Treat, levels = c("DMSO_minimal_media", "MBOA_500_minimal_media", "MBOA_2500_minimal_media", "Glucose_30000_minimal_media"))) %>% 
+  ggplot(aes(x=hrs, y= Density_increase, color = Treat)) +
+  # stat_summary(geom = "pointrange", fun.y = mean, fun.ymax = max, fun.ymin = min, alpha = 0.3) +
+  geom_line(aes(linetype = as.factor(Replicate))) +
+  facet_wrap(~Strain, scales = "fixed") +
+  scale_colour_manual(values = c("grey", "#00008b", "#0000ff", "#6a5acd", "#9f92ca", "#008B00"), labels = c("Control", "MBOA 500 uM", "MBOA 2500 uM", "Glucose 30000 uM"))+
+  theme_bw() +
+  # ggtitle("Plate *no bacteria* - check contamination")+
+  labs(x = "Time [hours]",
+       y = "OD 600", 
+       title = "all strains MBOA in minimal medium",
+       linetype = "Replicate",
+       color = "Chemical")
+```
+
+# AUC
+```{r, warning=FALSE, include=FALSE}
+results_AUC <- results %>% 
+  # filter(Media %in% "MM") %>% 
+  # arrange((Chem))  %>%
+  # mutate(Conc = factor(Conc, levels = c("0", "250", "500", "625", "1250", "2500", "5000"))) %>% 
+  unique() %>% 
+  group_by(Well, Strain, Replicate, Chem, Media, Well_Plate) %>% 
+  dplyr::summarise(AUC = auc(hrs, Density_increase), AUC_raw = auc(hrs, Density)) %>%
+  ungroup %>% 
+  mutate(AUC_pos = abs(AUC)) %>% 
+  mutate(Well_Strain_Replicate_Chem_Media = paste(Well, Strain, Replicate, Chem, Media)) %>% 
+  arrange(desc(Chem))  %>% # this a super important step to normalize with the growth in Conc = 0 (Conc has to be a numeric, see above)
+  #Split by Rep
+  base::split(., .$Well_Strain_Replicate_Chem_Media) %>% #Make each strain / rep combination its own data.frane
+  map_dfr(~ 
+  mutate(.x, AUC_norm = AUC_pos / AUC_pos[length(AUC_pos)])) %>% 
+  as.data.frame()
+
+Strain_Data_2 <- Strain_Data %>% mutate(Strain = gsub("_m", "", Strain)) %>% dplyr::select(Strain, Phylum, Class, Order, Family, Genus) %>% unique() %>% as.data.frame()
+
+results_AUC <- left_join(results_AUC, Strain_Data_2, by = "Strain")
+  # mutate(Well_Row = Well %>% str_extract(.,"[A-H]"),
+  #                   Well_Col = Well %>% str_extract(.,"[0-9]+") %>% as.numeric()) %>% 
+ # as.data.frame() #transform into df
+## Save table with AUC
+# write_rds(results_AUC, paste0("Output/results_AUC.rds"))
+```
+
+```{r, warning=F, echo=F, message=F}
+results_AUC %>%  
+  mutate(Chem_Media = interaction(Chem, Media, sep = "_")) %>% 
+  filter(Chem_Media %in% c("DMSO_2500_MM", "MBOA_500_MM", "MBOA_2500_MM", "DMG_500_MM", "DMG_2500_MM","DMSO_500_TSB")) %>% 
+  mutate(Chem_Media = factor(Chem_Media, levels = c("DMSO_2500_MM", "MBOA_500_MM", "MBOA_2500_MM", "DMG_500_MM", "DMG_2500_MM", "DMSO_500_TSB") )) %>%
+  filter(Strain %in% c("LSP13", "LMD1", "LMB2", "LME3", "LAC11", "LRC7.O", "LMX9", "LBA112", "LMI1x", "NBC")) %>% 
+  mutate(Strain = factor(Strain, levels = c("LSP13", "LMD1", "LMB2", "LME3", "LAC11", "LRC7.O", "LMX9", "LBA112", "LMI1x", "NBC") )) %>% 
+  # filter(Media %in% "MM") %>% 
+  ggplot(aes(x=Chem_Media, y= AUC)) +
+  geom_bar(aes(fill = Chem_Media), stat = "summary", show.legend = TRUE) +
+  geom_quasirandom(alpha = 0.7,  width = 0.3, show.legend = FALSE)+
+  geom_errorbar(stat = "summary", width = 0.2) +
+    # geom_jitter(width = 0.1, size = 0.01)+
+  facet_wrap(~Strain, nrow = 2, scales = "fixed") +
+  scale_fill_manual(values = c("#BEBEBE",       "#555CCB",     "#00008b",      "#FFA500",             "#EE7600",          "#3e5437"), 
+                    labels = c("DMSO 2500 uM", "MBOA 500 uM", "MBOA 2500 uM", "DIIMBOA-Glc 500 uM", "DIIMBOA-Glc 2500 uM",  "TSB"))+
+  scale_color_manual(values = c("#BEBEBE",       "#555CCB",     "#00008b",      "#FFA500",             "#EE7600",          "#3e5437"))+
+  theme_classic() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.01)))+
+  # theme(strip.background = element_rect(color = NULL, fill= "white", linetype="solid"), strip.text.x = element_text(size = 16/.pt, margin = margin(1, 1, 1, 1)))+
+  theme(axis.text.x=element_blank())+
+  labs(x = "",
+       y = "AUC", 
+       # title = "Carbon source",
+       fill = "Treatment")
+```
+
+```{r, warning=F, echo=F, message=F}
+Carbon_source_TSB <- results_AUC %>%  
+  mutate(Chem_Media = interaction(Chem, Media, sep = "_")) %>% 
+  filter(Chem_Media %in% c("DMSO_2500_MM", "MBOA_500_MM", "MBOA_2500_MM", "DMG_500_MM", "DMG_2500_MM","DMSO_500_TSB")) %>% 
+  mutate(Chem_Media = factor(Chem_Media, levels = c("DMSO_2500_MM", "MBOA_500_MM", "MBOA_2500_MM", "DMG_500_MM", "DMG_2500_MM", "DMSO_500_TSB") )) %>%
+  filter(Strain %in% c("LSP13", "LMD1", "LMB2", "LME3", "LAC11", "LRC7.O", "LMX9", "LBA112", "LMI1x", "NBC")) %>% 
+  mutate(Strain = factor(Strain, levels = c("LSP13", "LMD1", "LMB2", "LME3", "LAC11", "LRC7.O", "LMX9", "LBA112", "LMI1x", "NBC") )) %>% 
+  # filter(Media %in% "MM") %>% 
+  ggplot(aes(x=Chem_Media, y= AUC)) +
+  geom_bar(aes(fill = Chem_Media), stat = "summary", show.legend = FALSE) +
+  geom_quasirandom(alpha = 0.7,  width = 0.3, size =0.01, show.legend = FALSE)+
+  geom_errorbar(stat = "summary", width = 0.2, size = 0.2) +
+    # geom_jitter(width = 0.1, size = 0.01)+
+  facet_wrap(~Strain, nrow = 2, scales = "fixed") +
+  scale_fill_manual(values = c("#BEBEBE",       "#555CCB",     "#00008b",      "#FFA500",             "#EE7600",          "#3e5437"), 
+                    labels = c("DMSO 2500 uM", "MBOA 500 uM", "MBOA 2500 uM", "DIIMBOA-Glc 500 uM", "DIIMBOA-Glc 2500 uM",  "TSB"))+
+  scale_color_manual(values = c("#BEBEBE",       "#555CCB",     "#00008b",      "#FFA500",             "#EE7600",          "#3e5437"))+
+  scale_x_discrete(labels = NULL)+
+  theme_classic() +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.01)))+
+  # theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0)) +
+  # ggtitle("Plate *no bacteria* - check contamination")+
+  theme(strip.background = element_rect(color = NULL, fill= "white", linetype="solid"), strip.text.x = element_text(size = 16/.pt, margin = margin(1, 1, 1, 1)))+
+  theme(axis.text.y=element_text(size = 16/.pt),
+        axis.title = element_text(size = 16/.pt)) +
+  labs(x = "",
+       y = "AUC", 
+       # title = "Carbon source",
+       color = "Chemical")
+
+Carbon_source_TSB
+
+#ggsave(plot = Carbon_source_TSB, filename = "Carbon_source_TSB.pdf", width = 6.6, height = 6, dpi = 300, scale = 1, units = "cm")
+# # 
+#ggsave(plot = Carbon_source_TSB, filename = "Carbon_source_TSB.svg", width = 6.6, height = 6, dpi = 300, scale = 1, units = "cm")
+```
+
+```{r}
+sessionInfo()
+```
+
