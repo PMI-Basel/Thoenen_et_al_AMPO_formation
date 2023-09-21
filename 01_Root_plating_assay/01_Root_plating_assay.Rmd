@@ -1,0 +1,436 @@
+---
+title: "Plating roots of crop species"
+author: "Lisa Thönen"
+date: "11/7/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+### Background
+We conducted this experiment to investigate if bacterial community size and the ratio of AMPO producing bacteria differs between plants producing different amounts of benzoxazinoids. 
+
+We used WT and bx1 maize to investigate if this ratio differs between the genotypes in the root, rhizosphere and soil. 
+
+To investigate if this effect is observed on other plant species we tested wheat (produces less benzoxazinoids and the majority are non-methylated) and non-BX producing species medicago, brassica and arabidopsis. 
+
+### Materials and methods
+Plants were grown in Changins field soil for 7 weeks and fertilized. 
+Maize and brassica were grown in 1 L pots, medicago and wheat in 2 L pots and Arabidopsis in 200 ml pots. 
+
+For maize we harvested roots, rhizosphere and soil of 6 week old maize plants grown in field soil. For the other plant species we only harvested the roots. The dirty roots were washed in autoclaved water twice and dried on paper. The root samples were cut into small pieces, transferred to 10 ml MgCl2 + Tween 20 and homogenized with the polytron. The tubes were weighed to assess the root weight. 
+Rhizosphere samples were collected by cutting a root segment and vigourously shaking in 10 ml MgCl2 + Tween 20.
+
+Twenty ul of serial dilutions of the three sample types were plated on 1/10 tryptic soy broth (TSB) agar plates ammended with cycloheximide to inhibit fungual growth and DMSO (control for MBOA) to assess total community size. The plates were incubated for five days at room temperature and colonies were counted on both media. The counts were multiplied by the respective dilution factor and the factor of the volume plated 50 and normalized to the weight. The CFU counts on TSB represent the total bacterial counts in the extracts which are culturable on this media in these conditions.
+
+To quantify the ammount of bacteria which are able to metabolize MBOA to a red pigment, 50 ul of the root samples were plated at a dilution of 1:100 and the rhizosphere samples at a dilution of 1:1000 and incubated for 10 days at room temperature. All colonies were counted and red counts were separately recorded. 
+
+The counts were multiplied by the dilution factor 10000 and the factor of the volume plated 20, normalized to the weight and also normalized with the total CFU count. All CFU data were transformed with log10 prior to plotting and statistical analysis.
+
+Community size: counted after 3d and after 6d 
+
+AMPO producing bacteria: counted after 10d and a second picture after 18d 
+
+### Important results
+*Community size*
+More CFUs on bx1 than on WT rhizo and soil. 
+More CFUs on wheat compared to the other species. 
+
+*AMPO producing bacteria*
+Higher ratio of AMPO producing bacteria on WT than on bx1 roots, rhizosphere and soil. 
+Higher ratio of AMPO producing bacteria on maize than on all other species producing less and other benzoxazinoids. 
+
+### Conclusions 
+AMPO producing bacteria are enriched on benzoxazinoid producing roots. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,include=FALSE}
+rm(list=ls())
+```
+
+```{r,include=FALSE}
+# install.packages("dplyr")
+# install.packages("magrittr")
+# install.packages("tidyr")
+# install.packages("stringr")
+# install.packages("ggpubr")
+# install.packages("readxl")
+# install.packages("pander")
+# install.packages("ggplot2")
+# install.packages("multcomp")
+# install.packages("multcompView")
+# install.packages("emmeans")
+# install.packages("forcats")
+# install.packages('tinytex')
+# install.packages("ggbeeswarm")
+```
+
+```{r libraries, echo=F, message=F, warning=F}
+library("dplyr")
+library("magrittr")
+library("tidyr")
+library("stringr")
+library("ggpubr")
+library("readxl")
+library("pander")
+library("ggplot2")
+library("multcomp")
+library("emmeans")
+library("forcats")
+library("ggbeeswarm")
+```
+
+```{r functions, echo=F, message=F, warning=F}
+give.n <- function(x){
+  return(c(y = median(x)*1.05, label = length(x))) 
+  # experiment with the multiplier to find the perfect position
+}
+```
+
+```{r}
+symnum.args <- list(cutpoints = c(0, 0.001, 1), symbols = c("p < 0.001", "p.format"))
+```
+
+```{r, warning=F, echo=F, message=F, include=F}
+data <- readxl::read_excel("Input/Root_plating_assay.xlsx", sheet = 1, na = "NA")
+data %>% colnames()
+
+data %>% typeof()
+data <- data %>% as.data.frame()
+```
+
+```{r factor formatting, warning=F, echo=F, message=F, include=F}
+## experimental factors
+data$compartment <- factor(data$compartment, levels=c("root", "rhizo", "soil"))
+data$species <- factor(data$species, levels=c("B73_WT","B73_bx1", "Tri", "Med", "Bra", "Ara"))
+
+data$cols <- data$groups
+levels(data$cols) <- c("gold", "forestgreen", "brown", "darkorange", "darkgoldenrod4", "khaki" )
+
+colgroup <- c("gold", "forestgreen", "brown", "darkorange", "darkgoldenrod4", "khaki" )
+```
+
+```{r data formatting, warning=F, echo=F, message=F}
+data$CFU_TSB_Chex_w_log <- log10(data$CFU_TSB_Chex_w)
+data$CFU_TSB_Chex_w_6d_log <- log10(data$CFU_TSB_Chex_w_6d)
+
+data$CFU_red_10d_log <- log10(data$CFU_red_10d)
+data$CFU_red_10d_log[is.infinite(data$CFU_red_10d_log)] = 0
+
+# data %<>% mutate(CFU_red_10d_norm_per = (CFU_red_10d / CFU_TSB_Chex_6d_w)* 100)
+```
+
+Percent mean calculations
+```{r}
+# since the Arabidopsis roots were too light to weigh with the balance, the weight was corrected to the same weight for all roots to approximate, normalized AMPO CFUs were calculated from these values
+
+data %<>% mutate(sample_weight = case_when(species %in% "Ara" ~ 0.5,
+                                          !species %in% "Ara" ~ sample_weight)) %>% 
+         mutate(CFU_TSB_Chex_6d_w_n = CFU_TSB_Chex_6d/sample_weight) %>% 
+         mutate(CFU_red_10d_norm_per = (CFU_red_10d / CFU_TSB_Chex_6d_w_n)* 100)
+```
+
+```{r}
+data_mean_CFU_red_per <- data %>% filter(CFU_red_10d_norm_per != "NA") %>% group_by(species, compartment) %>% summarize(mean_FU_red_10d_norm_per = mean(CFU_red_10d_norm_per))
+```
+
+
+# Community size
+
+CFU count after 6 d on TSB + Chex
+
+```{r}
+data.soilWTbx <- data %>% filter(compartment %in% "soil")
+shapiro.test(data.soilWTbx$CFU_TSB_Chex_w_6d) 
+
+data.rhizoWTbx <- data %>% filter(compartment %in% "rhizo")
+shapiro.test(data.rhizoWTbx$CFU_TSB_Chex_w_6d) 
+
+data.rootWTbx <- data %>% filter(compartment %in% "root") %>% filter(species %in% c("B73_WT", "B73_bx1"))
+shapiro.test(data.rootWTbx$CFU_TSB_Chex_w_6d) 
+
+```
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=10, fig.height=5}
+data %>% 
+  filter(species %in% c("B73_WT", "B73_bx1")) %>% 
+  ggplot(aes(x = species, y = CFU_TSB_Chex_w_6d_log)) +
+ geom_bar(aes(fill = species), alpha = 0.5, stat = "summary", position = "dodge", show.legend = FALSE) +
+  geom_quasirandom(aes(fill = species), alpha = 0.7, shape = 21,  width = 0.3, show.legend = FALSE)+
+  geom_errorbar(stat = "summary", position = position_dodge(width = 1), width=0.2) +
+  stat_compare_means(label = "p.format", method = "t.test", cex = 8/.pt, hide.ns = TRUE, label.y = 16.5, label.x = 1) +
+  scale_fill_manual(values = c( "gold", "forestgreen" )) + 
+  scale_x_discrete(labels= c("WT", expression(paste(italic("bx1")))))+
+  facet_wrap(~ compartment)+
+  theme_classic() +
+  theme(plot.title=element_text(size = 25/.pt))+
+  scale_y_continuous(expand = expansion(c(0, 0.1)))+
+   labs(x = " ",
+        y = "CFU total",
+        title = "Community size",
+        caption = "")
+```
+
+```{r, include=FALSE, echo=F, message=F, warning=F}
+CFU_TSB_Chex_w_log.aov <- data %>%  
+  filter(compartment %in% "root") %>% 
+  filter(!sample_ID %in% c("B73_WT-root-2", "B73_WT-root-8", "Tri-root-1", "Bra-root-1")) %>% 
+  aov(CFU_TSB_Chex_w_log ~ species, data = .)
+summary(CFU_TSB_Chex_w_log.aov)
+
+cld_dat_root <- as.data.frame( cld(emmeans(CFU_TSB_Chex_w_log.aov, ~ species),
+                   Letters = letters ) ) 
+
+TukeyHSD(CFU_TSB_Chex_w_log.aov)
+```
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=10, fig.height=5}
+data %>% 
+  filter(compartment %in% "root") %>% 
+  filter(!sample_ID %in% c("B73_WT-root-2", "B73_WT-root-8", "Tri-root-1", "Bra-root-1")) %>% 
+ #  filter(!species %in% "Ara") %>% 
+  ggplot(aes(x = species, y = log10(CFU_TSB_Chex_w_6d))) +
+ geom_bar(aes(fill = species), alpha = 0.5, stat = "summary", position = "dodge", show.legend = FALSE) +
+  geom_quasirandom(aes(fill = species), alpha = 0.7, shape = 21,  width = 0.3, show.legend = FALSE)+
+  geom_errorbar(stat = "summary", position = position_dodge(width = 1), width=0.2) +
+      stat_compare_means(method = "anova", aes(x = species, y = log10(CFU_TSB_Chex_w_6d)), label.y = 17, cex = 8/.pt, label.x = 1) +
+  stat_compare_means(label = "p.signif", method = "t.test", ref.group = "B73_WT", hide.ns = TRUE, size = 4, label.y = 5) +
+  scale_fill_manual(values = c( "gold", "forestgreen", "tan3", "salmon4", "khaki4", "khaki3" )) + 
+  scale_x_discrete(labels= c("WT", expression(paste(italic("bx1"))), "Triticum", "Medicago", "Brassica", "Arabidopsis"))+
+  theme_classic() +
+  theme(plot.title=element_text(size = 25/.pt))+
+  scale_y_continuous(expand = expansion(c(0, 0.1)))+
+   labs(x = " ",
+        y = "CFU total",
+        title = "Community size",
+        caption = "")
+```
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=10, fig.height=5}
+data %>% 
+  filter(compartment %in% "root") %>% 
+  filter(!sample_ID %in% c("B73_WT-root-2", "B73_WT-root-8", "Tri-root-1", "Bra-root-1")) %>% 
+ #  filter(!species %in% "Ara") %>% 
+  ggplot(aes(x = species, y = log10(CFU_TSB_Chex_6d_w_n))) +
+ geom_bar(aes(fill = species), alpha = 0.5, stat = "summary", position = "dodge", show.legend = FALSE) +
+  geom_quasirandom(aes(fill = species), alpha = 0.7, shape = 21,  width = 0.3, show.legend = FALSE)+
+  geom_errorbar(stat = "summary", position = position_dodge(width = 1), width=0.2) +
+      stat_compare_means(method = "anova", aes(x = species, y = log10(CFU_TSB_Chex_6d_w_n)), label.y = 17, cex = 8/.pt, label.x = 1) +
+  stat_compare_means(label = "p.signif", method = "t.test", ref.group = "B73_WT", hide.ns = TRUE, size = 4, label.y = 5) +
+  scale_fill_manual(values = c( "gold", "forestgreen", "tan3", "salmon4", "khaki4", "khaki3" )) + 
+  scale_x_discrete(labels= c("WT", expression(paste(italic("bx1"))), "Triticum", "Medicago", "Brassica", "Arabidopsis"))+
+  theme_classic() +
+  theme(plot.title=element_text(size = 25/.pt))+
+  scale_y_continuous(expand = expansion(c(0, 0.1)))+
+   labs(x = " ",
+        y = "CFU total",
+        title = "Community size",
+        caption = "")
+```
+
+# AMPO-forming bacteria 
+
+```{r}
+data %>% 
+     filter(compartment %in% "root") %>% 
+     filter(!sample_ID %in% "B73_bx1-root-8") %>% 
+     filter(!sample_ID %in% c("B73_WT-root-2", "B73_WT-root-8")) %>% dplyr::select(species) %>% group_by(species) %>% count() %>% knitr::kable()
+```
+
+Root
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=7, fig.height=5}
+AMPO_root <- data %>% 
+  filter(compartment %in% "root") %>% 
+  filter(species %in% c("B73_WT", "B73_bx1")) %>% 
+  filter(!sample_ID %in% "B73_bx1-root-8") %>% 
+  filter(!sample_ID %in% c("B73_WT-root-2", "B73_WT-root-8")) %>% 
+  ggplot(aes(x = species, y = CFU_red_10d_norm_per)) +
+  geom_bar(aes(fill = species), alpha = 0.5, stat = "summary", position = "dodge", show.legend = FALSE) +
+  geom_quasirandom(aes(fill = species), alpha = 0.7, shape = 21,  width = 0.3, show.legend = FALSE)+
+  geom_errorbar(stat = "summary", position = position_dodge(width = 1), width=0.2) +
+  stat_compare_means(label = "p.format", method = "t.test", cex = 8/.pt, hide.ns = TRUE, label.y = 16.5, label.x = 1) +
+  scale_fill_manual(values = c( "gold", "forestgreen" )) + 
+  scale_x_discrete(labels= c("WT", expression(paste(italic("bx1")))))+
+  theme_classic() +
+  theme(plot.title=element_text(size = 25/.pt))+
+  scale_y_continuous(expand = expansion(c(0, 0.1)))+
+   labs(x = " ",
+        y = "CFU AMPO [%]",
+        title = "root",
+        caption = "")
+
+AMPO_root
+
+# ggsave(plot = AMPO_root, path = "C:/Users/Lisa/OneDrive - Universitaet Bern/_LISA_/0_Project/2_BX_Bacteria_Metabolism/Figures_Ch2", filename = "AMPO_root.pdf", width = 2.9, height = 6, dpi = 300, scale = 1, units = "cm")
+
+# ggsave(plot = AMPO_root, path = "C:/Users/Lisa/OneDrive - Universitaet Bern/_LISA_/0_Project/2_BX_Bacteria_Metabolism/Figures_Ch2", filename = "AMPO_root.svg", width = 2.9, height = 6, dpi = 300, scale = 1, units = "cm")
+
+# png(file="AMPO_root.png", width=700, height= 1200, res = 300)
+# AMPO_root
+# dev.off()
+```
+
+Rhizosphere
+```{r, echo=FALSE, message=F, warning=F, fig.width=7, fig.height=5}
+AMPO_rhizo <- data %>% 
+  filter(compartment %in% "rhizo") %>% 
+  filter(species %in% c("B73_WT", "B73_bx1")) %>% 
+  # filter(!sample_ID %in% "B73_bx1-rhizo-10") %>% 
+  # filter(!sample_ID %in% "B73_bx1-rhizo-1") %>% 
+  filter(CFU_red_10d_norm_per > 0) %>% 
+  ggplot(aes(x = species, y = CFU_red_10d_norm_per)) +
+  geom_bar(aes(fill = species), alpha = 0.5, stat = "summary", position = "dodge", show.legend = FALSE) +
+  geom_quasirandom(aes(fill = species), alpha = 0.7, shape = 21,  width = 0.3, show.legend = FALSE)+
+  geom_errorbar(stat = "summary", position = position_dodge(width = 1), width=0.2) +
+  stat_compare_means(label = "p.format", method = "t.test", cex = 8/.pt, hide.ns = TRUE, label.y = 13, label.x = 1) +
+  scale_fill_manual(values = c( "gold", "forestgreen" )) + 
+  scale_x_discrete(labels= c("WT", expression(paste(italic("bx1")))))+
+  # scale_y_continuous(expand = expansion(mult = c(0, NA)))+
+  scale_y_continuous(expand = expansion(c(0, 0.1)))+
+  theme_classic() +
+  theme(plot.title=element_text(size = 25/.pt))+
+   labs(x = " ",
+        y = "CFU AMPO [%]",
+        title = "rhizosphere",
+        caption = "")
+
+AMPO_rhizo
+
+# ggsave(plot = AMPO_rhizo, path = "C:/Users/Lisa/OneDrive - Universitaet Bern/_LISA_/0_Project/2_BX_Bacteria_Metabolism/Figures_Ch2", filename = "AMPO_rhizo.pdf", width = 2.9, height = 6, dpi = 300, scale = 1, units = "cm")
+
+# ggsave(plot = AMPO_rhizo, path = "C:/Users/Lisa/OneDrive - Universitaet Bern/_LISA_/0_Project/2_BX_Bacteria_Metabolism/Figures_Ch2", filename = "AMPO_rhizo.svg", width = 2.9, height = 6, dpi = 300, scale = 1, units = "cm")
+
+# png(file="AMPO_rhizo.png", width=700, height= 1200, res = 300)
+# AMPO_rhizo
+# dev.off()
+```
+
+Soil
+```{r, echo=FALSE, message=F, warning=F, fig.width=7, fig.height=5}
+AMPO_soil <- data %>% 
+  filter(compartment %in% "soil") %>% 
+  filter(species %in% c("B73_WT", "B73_bx1")) %>% 
+  filter(!sample_ID %in% "B73_bx1-soil-3") %>% 
+  ggplot(aes(x = species, y = CFU_red_10d_norm_per)) +
+  geom_bar(aes(fill = species), alpha = 0.5, stat = "summary", position = "dodge", show.legend = FALSE) +
+  geom_quasirandom(aes(fill = species), alpha = 0.7, shape = 21,  width = 0.3, show.legend = FALSE)+
+  geom_errorbar(stat = "summary", position = position_dodge(width = 1), width=0.2) +
+  stat_compare_means(label = "p.signif", method = "t.test", label.y.npc = "top", label.x.npc = "left", symnum.args = symnum.args, cex = 8/.pt, hide.ns = TRUE) +
+  scale_fill_manual(values = c( "gold", "forestgreen" )) + 
+  scale_x_discrete(labels= c("WT", expression(paste(italic("bx1")))))+
+  # scale_y_continuous(expand = expansion(mult = c(0, NA)))+
+  scale_y_continuous(expand = expansion(c(0, 0.1)))+
+  theme_classic() +
+  theme(plot.title=element_text(size = 25/.pt))+
+   labs(x = " ",
+        y = "CFU AMPO [%]",
+        title = "soil",
+        caption = "")
+
+AMPO_soil
+
+# ggsave(plot = AMPO_soil, path = "C:/Users/Lisa/OneDrive - Universitaet Bern/_LISA_/0_Project/2_BX_Bacteria_Metabolism/Figures_Ch2", filename = "AMPO_soil.pdf", width = 2.9, height = 6, dpi = 300, scale = 1, units = "cm")
+
+# ggsave(plot = AMPO_soil, path = "C:/Users/Lisa/OneDrive - Universitaet Bern/_LISA_/0_Project/2_BX_Bacteria_Metabolism/Figures_Ch2", filename = "AMPO_soil.svg", width = 2.9, height = 6, dpi = 300, scale = 1, units = "cm")
+
+# png(file="AMPO_soil.png", width=700, height= 1200, res = 300)
+# AMPO_soil
+# dev.off()
+```
+
+Species
+
+```{r, include=FALSE, echo=F, message=F, warning=F}
+CFU_AMPO_species_nobx1.aov <- data %>%  
+    filter(compartment %in% "root") %>% 
+  filter(!species %in% c("B73_bx1")) %>% 
+  # filter(!sample_ID %in% "B73_bx1-root-8") %>% 
+  # filter(!sample_ID %in% c("B73_WT-root-2", "B73_WT-root-8")) %>% 
+  aov(CFU_red_10d_norm_per ~ species, data = .)
+summary(CFU_AMPO_species_nobx1.aov)
+
+cld_dat_AMPO_species_root_nobx1 <- as.data.frame( cld(emmeans(CFU_AMPO_species_nobx1.aov, ~ species),
+                   Letters = letters ) ) 
+
+TukeyHSD(CFU_AMPO_species_nobx1.aov)
+```
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=10, fig.height=5}
+AMPO_species <- data %>% 
+  filter(compartment %in% "root") %>% 
+  filter(!species %in% c("B73_bx1")) %>% 
+  filter(!sample_ID %in% "B73_bx1-root-8") %>%
+  filter(!sample_ID %in% c("B73_WT-root-2", "B73_WT-root-8")) %>%
+  ggplot(aes(x = species, y = CFU_red_10d_norm_per)) +
+  geom_bar(aes(fill = species), alpha = 0.5, stat = "summary", position = "dodge", show.legend = FALSE) +
+  geom_quasirandom(aes(fill = species), alpha = 0.7, shape = 21,  width = 0.3, show.legend = FALSE)+
+  geom_errorbar(stat = "summary", position = position_dodge(width = 1), width=0.2) +
+  stat_compare_means(method = "anova", aes(x = species, y = CFU_red_10d_norm_per), label.y = 17, cex = 8/.pt, label.x = 1) +
+  # geom_text(aes(label = sample_ID))+
+  geom_text(data = cld_dat_AMPO_species_root_nobx1, aes(y = 16, label.x = 2,  label = trimws(.group)), cex = 7/.pt, position=position_dodge(0.8)) +
+  # stat_compare_means(label = "p.signif", method = "t.test", ref.group = "B73_WT", hide.ns = TRUE, size = 4, label.y = 5) +
+  scale_fill_manual(values = c( "gold", "tan3", "salmon4", "khaki4", "khaki3" )) + 
+  scale_x_discrete(labels= c("Zea", "Triticum", "Medicago", "Brassica", "Arabidopsis"))+
+  scale_y_continuous(expand = expansion(c(0, 0.1)))+
+  theme_classic() +
+  theme(axis.text.x=element_text(angle = 0, size = 8), axis.title = element_text(size = 25/.pt)) +
+        # axis.text.y=element_text(size = 15/.pt),
+  labs(x = " ",
+        y = "CFU AMPO [%]",
+        title = "species",
+        caption = "")
+
+AMPO_species
+
+# ggsave(plot = AMPO_species, filename = "AMPO_species.pdf", width = 8.8, height = 6, dpi = 300, scale = 1, units = "cm")
+# 
+# ggsave(plot = AMPO_species, filename = "AMPO_species.svg", width = 8.8, height = 6, dpi = 300, scale = 1, units = "cm")
+```
+
+Table of calculated means
+
+```{r}
+data_root <- data %>% 
+  filter(!CFU_red_10d_norm_per %in% NA) %>% 
+  filter(compartment %in% "root") %>% 
+  filter(species %in% c("B73_WT", "B73_bx1")) %>% 
+  filter(!sample_ID %in% "B73_bx1-root-8") %>% 
+  filter(!sample_ID %in% c("B73_WT-root-2", "B73_WT-root-8")) %>% na.omit() %>%  group_by(species) %>% 
+  dplyr::summarize(mean = mean(CFU_red_10d_norm_per))  %>% mutate(compartment = "root")
+
+
+data_rhizo <- data %>% 
+  filter(!CFU_red_10d_norm_per %in% NA) %>% 
+  filter(compartment %in% "rhizo") %>% 
+  filter(species %in% c("B73_WT", "B73_bx1")) %>% na.omit() %>%  group_by(species) %>% 
+  dplyr::summarize(mean = mean(CFU_red_10d_norm_per))  %>% mutate(compartment = "rhizo")
+  
+data_soil <- data %>% 
+  filter(!CFU_red_10d_norm_per %in% NA) %>% 
+  filter(compartment %in% "soil") %>% 
+  filter(species %in% c("B73_WT", "B73_bx1")) %>% 
+  filter(!sample_ID %in% "B73_bx1-soil-3") %>% na.omit() %>%  group_by(species) %>% 
+  dplyr::summarize(mean = mean(CFU_red_10d_norm_per)) %>% mutate(compartment = "soil")
+
+data_species <-  data %>% 
+  filter(!CFU_red_10d_norm_per %in% NA) %>% 
+  filter(compartment %in% "root") %>% 
+  filter(!species %in% c("B73_bx1")) %>% 
+  filter(!sample_ID %in% "B73_bx1-root-8") %>% 
+  filter(!sample_ID %in% c("B73_WT-root-2", "B73_WT-root-8"))  %>%  group_by(species) %>% 
+  dplyr::summarize(mean = mean(CFU_red_10d_norm_per)) %>% mutate(compartment = "species_root")
+
+data_mean <- rbind(data_root, data_rhizo, data_soil, data_species)
+
+data_mean %>% knitr::kable()
+```
+
+```{r}
+sessionInfo()
+```
+
