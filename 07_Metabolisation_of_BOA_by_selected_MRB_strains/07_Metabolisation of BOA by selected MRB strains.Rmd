@@ -1,0 +1,250 @@
+---
+title: "Metabolisation of BOA by selected MRB strains"
+ubtitle: "Thoenen et al. AMPO formation"
+author: "Lisa Thönen"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    fig_caption: yes
+    toc: true
+    toc_float: true
+    theme: cerulean
+    code_folding: show
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+rm(list = ls())
+```
+
+```{r,include=FALSE}
+# install.packages("dplyr") 
+# install.packages("magrittr") # for the %>% function
+# install.packages("ggplot2") # plots
+# install.packages("readxl") # to read excels
+# install.packages("stringr")
+# install.packages("MESS") # for auc function
+# install.packages("purrr")
+# install.packages("multcomp")
+# install.packages("emmeans")
+# install.packages("ggpubr")
+# install.packages("forcats")
+# install.packages("readr")
+# install.packages("ggpmisc")
+# install.packages("pander")
+# install.packages("rstatix")
+```
+
+```{r,include=FALSE}
+library("dplyr")
+library("magrittr")
+library("ggplot2")
+library("readxl")
+library("tidyr")
+library("readr")
+library("stringr")
+# library("MESS") 
+library("purrr")
+library("multcomp")
+library("emmeans")
+library("ggpubr")
+library("forcats")
+library("readr")
+library("ggpmisc")
+library("pander")
+library("rstatix")
+library("pheatmap")
+```
+
+# Data
+
+Read metadata and raw metabolite data. 
+
+```{r, echo=F, message=F, warning=F}
+# Metadata
+metadata <- read.csv("Input/220107_samples_metabolites_single_strains_MBOA_BOA.csv")
+
+# Metabolite data
+met <- read.csv("Input/20220201_MH_LT_SingleStrains_BOA_QL.csv") %>% 
+  mutate(Compound = gsub("MHPA", "HMPAA", Compound)) %>% 
+  filter(!Compound %in% "VAA") 
+
+# Molecular weights
+mol <- read_excel("Input/Molecular_weight_BXDs.xlsx") %>% mutate(Compound = gsub("MHPA", "HMPAA", Compound))
+```
+
+## Slopes for quantification
+using a standard curve the samples are quantified
+
+```{r, echo=F, message=F, warning=F}
+met_Std <- met %>% 
+  # mutate(Type = as.factor(Type)) %>% 
+  filter(Type %in% "Standard") %>% 
+  filter(Std_conc != "0") %>% 
+  filter(!Compound %in% c("AAPO", "MHPA",  "DIBOA-Glc", "HBOA-Glc", "HM2BOA-Glc", "HMBOA-Glc", "MAPH", "HDM2BOA-Glc", "DIM2BOA-Glc")) %>% 
+  filter(!Name %in% c("20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_40ngml_1", 
+                      "20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_100ngml_1", 
+                      "20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_200ngml_1", 
+                      "20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_500ngml_1", 
+                      "20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_1000ngml_1",
+                      "20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_40ngml_2", 
+                      "20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_100ngml_2", 
+                      "20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_200ngml_2", 
+                      "20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_500ngml_2", 
+                      "20220201_MH_LT_SingleStrains_DivMetabolites_MHPA_1000ngml_2")) %>% 
+  dplyr::select(Std_conc, Area, Compound) %>% 
+  filter(!Std_conc %in% "NA") %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  filter(!Area %in% "0") %>% 
+  filter(Std_conc %in% c("50.000", "200.000", "400.000")) %>% 
+  filter(Area > 9)
+```
+
+```{r, echo=F, message=F, warning=F, fig.width=15, fig.height=12}
+met_Std %>% as.data.frame() %>% 
+  filter(!Compound %in% c("AAPO", "HMPAA", "DIBOA-Glc", "HBOA-Glc", "HM2BOA-Glc", "HMBOA-Glc", "MAPH", "HDM2BOA-Glc", "DIM2BOA-Glc")) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x= Std_conc, y = Area)) + 
+  geom_point(aes(colour = Compound), show.legend = FALSE) +
+  geom_smooth(method = "lm", color="black", formula = y ~ 0 + x) +
+  stat_poly_eq(formula = y ~ 0 + x,
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+                parse = TRUE, label.y.npc = "top", label.x.npc = "left") +
+  stat_fit_glance(method = "lm", method.args = list(formula = y ~ 0 + x),
+                      geom = 'text', aes(label = paste("P-val. = ", 
+                      signif(..p.value.., digits = 4), sep = "")), label.y = "bottom", label.x = "center") +
+  facet_wrap(~Compound, scales = "free") +
+  labs(y = "Area",
+       x = "Concentration")
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes <- met_Std %>% 
+  filter(!Compound %in% c("AAPO", "HMPAA", "DIBOA-Glc", "HBOA-Glc", "HM2BOA-Glc", "HMBOA-Glc", "MAPH", "HDM2BOA-Glc", "DIM2BOA-Glc")) %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>%
+  group_by(Compound) %>% 
+  do(lm(Area ~ 0 + Std_conc,  data = .) %>%  coef() %>%   as.data.frame() %>% slice(1))
+```
+
+```{r, echo=F, message=F, warning=F}
+colnames(St_slopes) <- c("Compound", "Slope")
+```
+
+```{r, echo=F, message=F, warning=F}
+met$Name <- gsub("20220201_MH_LT_SingleStrains_DivMetabolites_", "", met$Name)
+met$Name <- gsub("LRC7-O", "LRC7.O", met$Name)
+met %<>% filter(Type %in% "Analyte")
+met <- left_join(met, mol, by = "Compound")
+met %<>% mutate(M = as.numeric(M)) 
+```
+
+```{r, echo=F, message=F, warning=F}
+metadata %<>% dplyr::rename(Name = Sample_ID)
+met <- left_join(met, metadata, by = "Name")
+met %<>% as.data.frame()
+
+met$Treatment <- factor(met$Treatment, levels = c("DMSO", "DMG", "MBOA", "AMPO", "BOA"))
+
+met <- left_join(met, St_slopes, by = "Compound")
+```
+
+```{r, echo=F, message=F, warning=F}
+met$cols <- as.character(met$Compound)
+met[met$Compound == "AMPO", ]$cols <- "darkred"
+met[met$Compound == "AAMPO", ]$cols <- "firebrick1"
+met[met$Compound == "HMPAA", ]$cols <- "gold2"
+met[met$Compound == "MBOA", ]$cols <- "darkblue"
+met[met$Compound == "MAPH", ]$cols <- "khaki"
+
+met[met$Compound == "HMBOA", ]$cols <- "skyblue"
+met[met$Compound == "BOA", ]$cols <- "slateblue"
+met[met$Compound == "MBOA-Glc", ]$cols <- "darkmagenta"
+
+met[met$Compound == "HMPMA", ]$cols <-  "slategray"
+met[met$Compound == "DIMBOA", ]$cols <-  "tan"
+met[met$Compound == "APO", ]$cols <-  "pink"
+# met[met$Compound == "AAPO", ]$cols <-  "pink3"
+
+met[met$Compound == "DIMBOA-Glc", ]$cols <-  "darkorange2"
+met[met$Compound == "HDMBOA-Glc", ]$cols <-  "thistle3"
+met[met$Compound == "HBOA-Glc", ]$cols <-  "slategray"
+met[met$Compound == "DIBOA-Glc", ]$cols <-  "slategray"
+met[met$Compound == "HMBOA-Glc", ]$cols <-  "skyblue2"
+met[met$Compound == "HM2BOA-Glc", ]$cols <-  "skyblue4"
+met[met$Compound == "DIM2BOA-Glc", ]$cols <-  "sandybrown"
+met[met$Compound == "HDM2BOA-Glc", ]$cols <-  "thistle1"
+
+temp <- data.frame(met$Compound, met$cols)
+temp <- plyr::ddply(temp, .variables="met.Compound", .fun=unique) 
+level_cols_Compound <- as.character(temp[,2])
+names(level_cols_Compound) <- temp[,1]
+```
+
+```{r, echo=F, message=F, warning=F}
+met$Area_sample <- as.numeric(met$Area) / 0.02 #
+met$ng_sample <- met$Area_sample / met$Slope 
+met$uMol <- (met$ng_sample) / met$M
+```
+
+
+## Graphs
+
+```{r, echo=F, message=F, warning=F, fig.width=15, fig.height=12}
+met %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  ggplot(aes(x = Strain, y = as.numeric(Area), group = Treatment)) +
+  geom_point(aes(colour = Treatment), show.legend = TRUE) +
+  facet_wrap(~ Compound, scales = "free") +
+  scale_fill_manual(values = c("darkblue", "darkred"))+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) +
+  labs(y = "Area")
+```
+
+```{r, echo=F, message=F, warning=F}
+met %>% 
+  as.data.frame() %>% 
+  ggplot(aes(x = as.factor(Strain), y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "identity", size = 2, show.legend = TRUE) +
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) +
+  facet_wrap(~Treatment, scales = "free_y", ncol = 1) +
+  labs(x = " ",
+       y = "concentration [μM]",
+       title = "metabolization of BXDs",
+       subtitle = "DMG, MBOA, AMPO")
+```
+
+```{r, echo=F, message=F, warning=F}
+MBOA_BOA_bargraph <- met %>% 
+  filter(Strain %in% c("LSP13", "LMD1", "LMB2", "LME3", "LAC11", "LRC7.O", "LMX9", "LBA112", "LMI1x", "NBC")) %>% 
+  mutate(Strain = factor(Strain, levels = c("LSP13", "LMD1", "LMB2", "LME3", "LAC11", "LRC7.O", "LMX9", "LBA112", "LMI1x", "NBC"))) %>% 
+  filter(Treatment %in% c("MBOA", "BOA")) %>% 
+  filter(Compound %in% c("MBOA", "AMPO", "BOA", "APO")) %>% 
+  ggplot(aes(x = as.factor(Strain), y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "identity", size = 2, show.legend = T) +
+  scale_fill_manual(values = level_cols_Compound)+
+  coord_flip()+
+  theme_bw() +
+  facet_wrap(~Treatment, scales = "free_y", ncol = 2) +
+  labs(x = " ",
+       y = "concentration [μM]")
+
+MBOA_BOA_bargraph
+
+ggsave(plot = MBOA_BOA_bargraph, filename = "FigS11b_MBOA_BOA_bargraph.svg", width = 10, height = 12, dpi = 300, scale = 1, units = "cm")
+```
+
+```{r}
+sessionInfo()
+```
+
+

@@ -1,0 +1,359 @@
+---
+title: "AtSphere Bacteria BX metabolites"
+subtitle: "Thoenen et al. AMPO formation"
+author: "Lisa Thönen"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    fig_caption: yes
+    toc: true
+    toc_float: true
+    theme: cerulean
+    code_folding: show
+editor_options: 
+  chunk_output_type: console
+---
+
+Here we plot the results of the MBOA to AMPO screen AtSphere bacteria using the metabolite assay in liquid cultures. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup
+```{r, include=FALSE}
+rm(list = ls())
+```
+
+```{r,include=FALSE}
+# install.packages("dplyr") 
+# install.packages("magrittr") # for the %>% function
+# install.packages("ggplot2") # plots
+# install.packages("readxl") # to read excels
+# install.packages("stringr")
+# install.packages("MESS") # for auc function
+# install.packages("purrr")
+# install.packages("multcomp")
+# install.packages("emmeans")
+# install.packages("ggpubr")
+# install.packages("forcats")
+# install.packages("readr")
+# install.packages("ggpmisc")
+# install.packages("pander")
+# install.packages("rstatix")
+```
+
+```{r,include=FALSE}
+library("dplyr")
+library("magrittr")
+library("ggplot2")
+library("readxl")
+library("tidyr")
+library("readr")
+library("stringr")
+library("MESS") 
+library("purrr")
+library("multcomp")
+library("emmeans")
+library("ggpubr")
+library("forcats")
+library("readr")
+library("ggpmisc")
+library("pander")
+library("rstatix")
+```
+
+# Data
+Metadata and raw metabolisation data are loaded. 
+
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE}
+# Metadata
+metadata <- read_excel("Input/AtSphere_AMPOformation_met.xlsx") 
+# metadata_plate <- read_excel("Input/AtSphere_AMPOformation_met.xlsx", sheet = 2) %>% dplyr::select(AMPO_former, Strain)
+# metadata <- left_join(metadata_met, metadata_plate, by = "Strain")
+
+# Metabolite data
+met <- read_excel("Input/20230815_AtSphere_metabolites_quant.xlsx")
+# Molecular weights
+mol <- read_excel("Input/Molecular_weight_BXDs.xlsx")
+```
+
+```{r, warning=F, echo=F, message=F}
+met %<>% dplyr::rename(Std_conc = `Std. Conc`)
+
+```
+
+## Slopes for quantification
+using a standard curve the samples are quantified
+
+```{r, warning=F, echo=F, message=F}
+met_Std <- met %>% 
+  filter(Type %in% "Standard") %>% 
+  filter(!Compound %in% c("DIBOA-Glc", "HDM2BOA-Glc", "DIM2BOA-Glc")) %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+met_Std %<>% filter(!Std_conc %in% "NA")
+```
+
+```{r, warning=F, echo=F, message=F, fig.width=15, fig.height=12}
+met_Std %>% as.data.frame() %>% 
+  filter(!Compound %in% c("DIBOA-Glc", "HDM2BOA-Glc", "MAPH", "MHPA", "DIM2BOA-Glc", "HBOA-Glc", "HM2BOA-Glc", "HMBOA-Glc")) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x= Std_conc, y = Area)) + 
+  geom_point(aes(colour = Compound), show.legend = FALSE) +
+  geom_smooth(method = "lm", color="black", formula = y ~ 0 + x) +
+  stat_poly_eq(formula = y ~ 0 + x,
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+                parse = TRUE, label.y.npc = "top", label.x.npc = "left") +
+  stat_fit_glance(method = "lm", method.args = list(formula = y ~ 0 + x),
+                      geom = 'text', aes(label = paste("P-val. = ", 
+                      signif(..p.value.., digits = 4), sep = "")), label.y = "bottom", label.x = "center") +
+  facet_wrap(~Compound, scales = "free") +
+  labs(y = "Area",
+       x = "Concentration")
+```
+
+```{r, warning=F, echo=F, message=F}
+met_Std$Area <- gsub("NA", "0", met_Std$Area)
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes <- met_Std %>%
+  filter(!Compound %in% c("MHPA", "DIBOA-Glc", "HDM2BOA-Glc", "MAPH", "MHPA", "DIM2BOA-Glc", "HBOA-Glc", "HM2BOA-Glc", "HMBOA-Glc")) %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>%
+  group_by(Compound) %>% 
+  do(lm(Area ~ 0 + Std_conc,  data = .) %>%  coef() %>%   as.data.frame() %>% slice(1))
+```
+
+```{r, warning=F, echo=F, message=F}
+colnames(St_slopes) <- c("Compound", "Slope")
+```
+
+```{r, warning=F, echo=F, message=F}
+met$Name <- gsub("20230815_PM_LT_AtSphere_AMPOformation_", "", met$Name)
+met$Name <- gsub("20230815_PM_LT_AtSphere_AMPOformation_PM11xStds2IS_", "", met$Name)
+met$Name <- gsub("LRC7_O_D", "LRC7.O_D", met$Name)
+met$Name <- gsub("LRC7_O_M", "LRC7.O_M", met$Name)
+
+met %<>% filter(Type %in% "Analyte")
+met <- left_join(met, mol, by = "Compound")
+met %<>% mutate(M = as.numeric(M)) # NAs can not be mutated to numeric, a small error message pops up
+```
+
+```{r, warning=F, echo=F, message=F}
+metadata %<>% dplyr::rename(Name = Sample_ID)
+met <- left_join(met, metadata, by = "Name")
+met %<>% as.data.frame()
+```
+
+```{r, warning=F, echo=F, message=F}
+met <- left_join(met, St_slopes, by = "Compound")
+```
+
+```{r, warning=F, echo=F, message=F}
+met$cols <- as.character(met$Compound)
+met[met$Compound == "AMPO", ]$cols <- "darkred"
+met[met$Compound == "AAMPO", ]$cols <- "firebrick1"
+met[met$Compound == "MBOA", ]$cols <- "darkblue"
+
+met[met$Compound == "HMBOA", ]$cols <- "skyblue"
+met[met$Compound == "BOA", ]$cols <- "slateblue"
+met[met$Compound == "MBOA-Glc", ]$cols <- "darkmagenta"
+
+
+met[met$Compound == "HMPMA", ]$cols <-  "slategray"
+met[met$Compound == "DIMBOA", ]$cols <-  "slategray"
+met[met$Compound == "APO", ]$cols <-  "slategray"
+
+met[met$Compound == "DIMBOA-Glc", ]$cols <-  "slategray"
+met[met$Compound == "HDMBOA-Glc", ]$cols <-  "slategray"
+met[met$Compound == "HBOA-Glc", ]$cols <-  "slategray"
+met[met$Compound == "DIBOA-Glc", ]$cols <-  "slategray"
+met[met$Compound == "HMBOA-Glc", ]$cols <-  "slategray"
+met[met$Compound == "HM2BOA-Glc", ]$cols <-  "slategray"
+met[met$Compound == "DIM2BOA-Glc", ]$cols <-  "slategray"
+met[met$Compound == "HDM2BOA-Glc", ]$cols <-  "slategray"
+
+temp <- data.frame(met$Compound, met$cols)
+temp <- plyr::ddply(temp, .variables="met.Compound", .fun=unique)   #library(plyr)
+level_cols_Compound <- as.character(temp[,2])
+names(level_cols_Compound) <- temp[,1]
+```
+
+```{r, warning=F, echo=F, message=F}
+met$Area_sample <- as.numeric(met$Area)
+met$ng_sample <- met$Area_sample / met$Slope 
+met$uMol <- ((met$ng_sample) / met$M) / 0.02
+```
+
+```{r, warning=F, echo=F, message=F}
+met_AtSphere <- met %>% filter(Strain != "NA") # Subset AtSphere experiment
+```
+
+
+# All metabolites in all compounds
+
+
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE}
+met %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  filter(Strain != "NA") %>% 
+  ggplot(aes(x = Strain, y = uMol, group = Compound)) +
+  geom_point(aes(colour = Compound), stat = "identity", size = 2, show.legend = TRUE) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) 
+```
+
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE}
+met %<>% filter(!Compound %in% c("APO", "DIBOA-Glc", "DIM2BOA-Glc", "DIMBOA", "DIMBOA-Glc", "HMBOA-Glc", "HDM2BOA-Glc", "HDMBOA-Glc", "HM2BOA-Glc", "HMBOA", "HMBOA-Glc"))
+```
+
+These compounds were not detected in the analysis and therefore removed from the analysis from here
+AAMPO, APO, DIBOA-Glc, DIM2BOA-Glc, DIMBOA, DIMBOA-Glc, HMBOA-Glc, HDM2BOA-Glc, HDMBOA-Glc, HM2BOA-Glc, HMBOA, HMBOA-Glc
+
+
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE}
+met %>% 
+  filter(Treatment %in% "MBOA") %>% 
+  ggplot(aes(x = interaction(Strain, Genus), y = as.numeric(Area))) +
+  geom_bar(aes(fill = Compound), stat = "identity", size = 2, show.legend = TRUE) +
+  # geom_path(aes(colour = Compound), stat = "summary") +
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) +
+  labs(x = "")
+```
+
+# quantified compounds 
+
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE}
+met %<>% mutate(Origin = as.factor(Origin))
+```
+
+
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE}
+mettileAtSphere <- 
+met %>%
+  filter(!Strain %in% NA) %>% 
+mutate(Strain_Genus = interaction(Strain, Genus)) %>%
+          mutate(Strain_Genus = factor(Strain_Genus, levels =    c("LMB2.Microbacterium", #ok
+        "LSP13.Sphingobium",#ok
+        "LAC11.Acinetobacter",#ok
+        "LRC7.O.Agrobacterium",
+        "Root231.Sinorhizobium",#ok
+        "Root1280.Acinetobacter",#ok
+        "Leaf131.Xanthomonas",#ok
+        "Root83.Achromobacter",#ok
+        "Leaf130.Acinetobacter",
+        "Root434.Variovorax",#ok
+        "Leaf51.Rahnella",#ok
+        "Root1240.Agrobacterium",#ok
+        "Leaf70.Xanthomonas",#ok
+        "Leaf53.Erwinia", #ok
+        "Root149.Rhizobium",#ok
+        "Root651.Agrobacterium",#ok
+        "Root318.Variovorax",#ok
+        "Root401.Pseudomonas",#ok
+        "Root564.Agrobacterium",#ok
+        "NBC.NA"
+        ))) %>%
+  ggplot()+
+  geom_tile(aes(x= Strain_Genus, y = 50, fill = Origin), height = 20) +
+  scale_fill_manual(values = c("#3e5437", "tan3", "grey"), labels = c("maize", "arabidopsis", "other"), name = "Host plant") +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 ))
+
+mettileAtSphere
+
+ggsave(plot = mettileAtSphere, filename = "FigS7b_mettileAtSphere.svg", width = 16.6, height = 12, dpi = 300, scale = 1, units = "cm")
+```
+
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE}
+mettileAtSphereAMPO <- 
+met %>%
+  filter(!Strain %in% NA) %>% 
+mutate(Strain_Genus = interaction(Strain, Genus)) %>%
+          mutate(Strain_Genus = factor(Strain_Genus, levels =    
+      c("LMB2.Microbacterium", #ok
+        "LSP13.Sphingobium",#ok
+        "LAC11.Acinetobacter",#ok
+        "LRC7.O.Agrobacterium",
+        "Root231.Sinorhizobium",#ok
+        "Root1280.Acinetobacter",#ok
+        "Leaf131.Xanthomonas",#ok
+        "Root83.Achromobacter",#ok
+        "Leaf130.Acinetobacter",
+        "Root434.Variovorax",#ok
+        "Leaf51.Rahnella",#ok
+        "Root1240.Agrobacterium",#ok
+        "Leaf70.Xanthomonas",#ok
+        "Leaf53.Erwinia", #ok
+        "Root149.Rhizobium",#ok
+        "Root651.Agrobacterium",#ok
+        "Root318.Variovorax",#ok
+        "Root401.Pseudomonas",#ok
+        "Root564.Agrobacterium",#ok
+        "NBC.NA"
+        ))) %>%
+  mutate(AMPO_former = factor(AMPO_former, levels = c("NA", "non", "weak", "strong"))) %>% 
+  ggplot()+
+  geom_tile(aes(x= Strain_Genus, y = 50, fill = AMPO_former), height = 20) +
+  scale_fill_manual(values = c("grey", "lightgoldenrod", "tomato1", "darkred"), labels = c("not tested", "no", "weak", "strong"), 
+                    name = "AMPO phenotype on plate")+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 ))
+
+mettileAtSphereAMPO
+
+ggsave(plot = mettileAtSphereAMPO, filename = "FigS7b_AMPOplate.svg", width = 16.6, height = 12, dpi = 300, scale = 1, units = "cm")
+```
+
+
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE}
+metplotAtSphere <- met %>%
+  filter(!Strain %in% NA) %>% 
+  filter(Compound %in% c("MBOA", "AMPO", "AAMPO")) %>% 
+  mutate(Strain_Genus = interaction(Strain, Genus)) %>%
+          mutate(Strain_Genus = factor(Strain_Genus, levels =    
+      c("LMB2.Microbacterium", #ok
+        "LSP13.Sphingobium",#ok
+        "LAC11.Acinetobacter",#ok
+        "LRC7.O.Agrobacterium",
+        "Root231.Sinorhizobium",#ok
+        "Root1280.Acinetobacter",#ok
+        "Leaf131.Xanthomonas",#ok
+        "Root83.Achromobacter",#ok
+        "Leaf130.Acinetobacter",
+        "Root434.Variovorax",#ok
+        "Leaf51.Rahnella",#ok
+        "Root1240.Agrobacterium",#ok
+        "Leaf70.Xanthomonas",#ok
+        "Leaf53.Erwinia", #ok
+        "Root149.Rhizobium",#ok
+        "Root651.Agrobacterium",#ok
+        "Root318.Variovorax",#ok
+        "Root401.Pseudomonas",#ok
+        "Root564.Agrobacterium",#ok
+        "NBC.NA"
+        ))) %>% 
+  filter(Treatment %in% "MBOA") %>% 
+  ggplot(aes(x = Strain_Genus, y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "identity") +
+  scale_fill_manual(values = level_cols_Compound)+
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.2)))+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) +
+  labs(x = "")
+
+metplotAtSphere
+
+ggsave(plot = metplotAtSphere, filename = "FigS7b_metabolites.svg", width = 16.6, height = 12, dpi = 300, scale = 1, units = "cm")
+```
+
+
+```{r}
+sessionInfo()
+```
+
