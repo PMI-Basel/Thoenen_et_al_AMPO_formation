@@ -1,0 +1,463 @@
+---
+title: "MBOA and BOA metabolization LSP13 bxdA mutants"
+subtitle: "Thoenen et al. AMPO formation"
+author: "Lisa Thönen & Christine Pestalozzi"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    fig_caption: yes
+    toc: true
+    toc_float: true
+    theme: cerulean
+    code_folding: show
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=F, echo=F, include=FALSE}
+rm(list = ls())
+```
+
+# Set settings
+set working directory to source file location
+
+# Packages
+Library loading, setting up misc functionsl
+
+```{r, warning=FALSE, include=FALSE}
+library("tidyverse")
+library("readxl")
+library("magrittr")
+library("ggthemes")
+library("ggforce")
+library("ggpubr")
+library("ggpmisc")
+```
+
+# TSB
+## Data
+
+Load data
+-metadata: Information on the samples for metabolite analysis. There were additional samples run in the same run that are not relevant to this paper. Metadata for these is therefore omitted. 
+-data_MBOA: "Compound 8: MBOA" -> table starts at Row 3 (-Row49)
+-data_AMPO: "Compound 16: AMPO" -> table starts at Row 53 (-Row99)
+
+```{r,  warning=F, echo=F, include=FALSE}
+# Molecular weights
+mol <- read_excel("Input/Molecular_weight_BXDs.xlsx")
+
+mol %<>% mutate(Compound = gsub("MHPA", "HMPAA", Compound)) %>% 
+       mutate(Compound = gsub("MAPH", "MAP",  Compound)) 
+```
+
+```{r,  warning=F, echo=F, include=FALSE}
+metadata <- read.delim("Input/Metabolites/LSP13_d3bxdAmutants_MBOA_metabolization_complex.txt", header = T)
+
+data_MBOA <- read_excel("Input/Metabolites/20230823_LSP13_Data_Shared_Area_complex_medium.xlsx", range = "B7:J59") %>%   mutate(Compound = "MBOA")
+
+data_AMPO  <- read_excel("Input/Metabolites/20230823_LSP13_Data_Shared_Area_complex_medium.xlsx", range = "B63:J115") %>%  mutate(Compound = "AMPO")
+```
+
+Format the data
+```{r,  warning=F, echo=F, include=FALSE}
+# combine the datasets
+results_TSB <- rbind(data_MBOA, data_AMPO)
+
+# reformat and merge with metadata (use Sample_Name of metadata for merging)
+results_TSB %<>% mutate(Sample_Merge = Name) %>% # prepare temporary column for merge
+  separate(Sample_Merge, into = c(NA, "Sample"), sep = "20230829_PM_CP_LSP13_23CMP12_") %>%
+  left_join(metadata %>% dplyr::select(Sample_Name, Timepoint, Strain_Nr, MBOA_uM, Set), by = c("Sample" = "Sample_Name"))
+
+# add info for blank for MBOA concentration and add a comment for strain
+results_TSB$MBOA_uM[grep("BLANK", results_TSB$Name)] <- 0
+results_TSB$Strain_Nr[grep("BLANK", results_TSB$Name)] <- "CTL"
+
+SampleColorVector <-  c("1" = "#c5000b", 
+                  "5" =  "#c4626c",
+                  "6" =  "#c4626c",
+                  "7" = "grey")
+
+
+# Sorting of Timepoint and Compound
+results_TSB$Timepoint = factor(results_TSB$Timepoint, levels = c("TP8", "TP24", "TP48")) #note TP8 and TP24 are from one experiment and TP48 from another
+results_TSB$Compound = factor(results_TSB$Compound, levels = c("MBOA", "AMPO"))
+
+results_TSB %<>% mutate(Strain_Label = Strain_Nr)
+
+results_TSB$Strain_Label %>% unique()
+
+results_TSB$Strain_Label <- factor(results_TSB$Strain_Label, levels = c("CTL","7", "1", "5"), 
+                  labels = c("CTL", "NBC", "WT", expression(Delta*"3bxdA")))
+
+```
+
+Calculations concentrations
+
+```{r, warning=F, echo=F, message=F}
+results_TSB %<>% dplyr::rename(Std_conc = `Std. Conc`, ng_mL_ML = `ng/mL`)
+```
+
+Quantification & calculations: using a standard curve the samples are quantified
+
+```{r, warning=F, echo=F, message=F}
+results_TSB_Std_11 <- results_TSB %>% 
+  filter(grepl('Stds11x2IS', Name)) %>% 
+  filter(Type %in% "Standard") %>% 
+  filter(Std_conc != "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+results_TSB_Zero <- results_TSB %>% 
+  filter(grepl('Stds11x2IS', Name)) %>% 
+  filter(Std_conc %in% "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+results_TSB_Std_11 <- rbind(results_TSB_Std_11, results_TSB_Zero)
+results_TSB_Std_11 %<>% filter(!Std_conc %in% "NA")
+```
+
+
+```{r, warning=F, echo=F, message=F}
+results_TSB_Std_11 %>% 
+  filter(Compound != "HMPAA") %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x= Std_conc, y = Area)) + 
+  geom_point(aes(colour = Compound), show.legend = FALSE) +
+  geom_smooth(method = "lm", color="black", formula = y ~ 0 + x) +
+  ggpmisc::stat_poly_eq(formula = y ~ 0 + x,
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+                parse = TRUE, label.y.npc = "top", label.x.npc = "left") +
+  facet_wrap(~Compound, scales = "free") +
+  labs(y = "Area",
+       x = "Concentration")
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes_11 <- results_TSB_Std_11 %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>%
+  group_by(Compound) %>% 
+  do(lm(Area ~ 0 + Std_conc,  data = .) %>%  coef() %>%   as.data.frame() %>% slice(1))
+```
+
+```{r, warning=F, echo=F, message=F}
+colnames(St_slopes_11) <- c("Compound", "Slope")
+```
+
+```{r, warning=F, echo=F, message=F}
+results_TSB <- left_join(results_TSB, St_slopes_11, by = "Compound")
+results_TSB <- left_join(results_TSB, mol, by = "Compound")
+```
+
+```{r, warning=F, echo=F, message=F}
+results_TSB$cols <- as.character(results_TSB$Compound)
+results_TSB[results_TSB$Compound == "MBOA-Glc", ]$cols <- "cornflowerblue"
+results_TSB[results_TSB$Compound == "HMPMA", ]$cols <-  "darkolivegreen4"
+
+
+results_TSB[results_TSB$Compound == "AMPO", ]$cols <- "darkred"
+results_TSB[results_TSB$Compound == "AAMPO", ]$cols <- "firebrick1"
+results_TSB[results_TSB$Compound == "HMPAA", ]$cols <- "gold2"
+results_TSB[results_TSB$Compound == "MBOA", ]$cols <- "darkblue"
+
+results_TSB[results_TSB$Compound == "HMBOA", ]$cols <- "skyblue"
+results_TSB[results_TSB$Compound == "BOA", ]$cols <- "slateblue"
+
+
+results_TSB[results_TSB$Compound == "DIMBOA", ]$cols <-  "tan"
+results_TSB[results_TSB$Compound == "APO", ]$cols <-  "pink"
+# results_TSB[results_TSB$Compound == "AAPO", ]$cols <-  "palevioletred"
+
+temp <- data.frame(results_TSB$Compound, results_TSB$cols)
+temp <- plyr::ddply(temp, .variables="results_TSB.Compound", .fun=unique)   #library(plyr)
+level_cols_Compound <- as.character(temp[,2])
+names(level_cols_Compound) <- temp[,1]
+```
+
+```{r, warning=F, echo=F, message=F}
+results_TSB$Area_sample <- as.numeric(results_TSB$Area) / 0.02
+results_TSB$ng_sample <- results_TSB$Area_sample / results_TSB$Slope 
+results_TSB$uMol <- (results_TSB$ng_sample) / results_TSB$M
+```
+
+```{r, warning=F, echo=F, message=F}
+SampleVector <- c("1" = "WT", 
+                  "5" = expression(Delta*"3bxdA"),
+                  "7" = "NBC")
+```
+
+ 
+## Plot
+
+Fig 5c: Metabolization of MBOA in 0.5xTSB supplemented with 500 uM MBOA. Plot MBOA and AMPO combined, then plot only AMPO separately for better visualization
+```{r, warning=F, echo=F, message=F}
+strains_plot <- names(SampleVector)
+
+MBOA_AMPO_TSB <- results_TSB %>% 
+  filter(Strain_Nr %in% strains_plot) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  filter(MBOA_uM %in% "500") %>% 
+  ggplot(aes(x = Strain_Nr, y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "identity", show.legend = TRUE) +
+  scale_fill_manual( values = SampleColorVector)+
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_classic() +
+  scale_x_discrete(labels = SampleVector)+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 ), axis.title.x = element_blank(), strip.background = element_blank()) +
+  facet_wrap(~ Timepoint)+
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2)))+
+  labs(y = "Concentration [µM]")
+
+AMPO_TSB <- results_TSB %>% 
+  filter(Strain_Nr %in% strains_plot) %>% 
+  filter(Compound == "AMPO") %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  filter(MBOA_uM %in% "500") %>% 
+  ggplot(aes(x = Strain_Nr, y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "identity", show.legend = TRUE) +
+  scale_fill_manual( values = SampleColorVector)+
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_classic() +
+  scale_x_discrete(labels = SampleVector)+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 ), axis.title.x = element_blank(), strip.background = element_blank()) +
+  facet_wrap(~ Timepoint)+
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2)))+
+  labs(y = "Concentration [µM]" )
+
+combined_TSB = ggarrange(MBOA_AMPO_TSB, AMPO_TSB, nrow = 2, common.legend = T, align = "h", labels = c("c", ""), legend = "right")
+
+combined_TSB
+
+ggsave(plot = combined_TSB, filename = "Fig5c.svg", width = 12, height = 12, dpi = 300, scale = 1, units = "cm")
+
+```
+
+
+# Minimal medium
+## Data
+```{r, warning=F, echo=F, include=FALSE}
+metadata_MM <- read_excel("Input/Metabolites/20240205_LSP13_bxdAmutant_MBOA_BOA_metabolization_MM.xlsx", range = "A5:H37")
+
+data_MM_BOA <- read_excel("Input/Metabolites/20240208_PM_AW_LSP13_24AW02_minimalmedium.xlsx", sheet = 1, range = "B394:K433") %>%
+  mutate(Compound = "BOA")
+data_MM_MBOA <- read_excel("Input/Metabolites/20240208_PM_AW_LSP13_24AW02_minimalmedium.xlsx", sheet = 1, range = "B437:K476")%>%
+  mutate(Compound = "MBOA")
+data_MM_APO <- read_excel("Input/Metabolites/20240208_PM_AW_LSP13_24AW02_minimalmedium.xlsx", sheet = 1, range = "B480:K519") %>%
+  mutate(Compound = "APO")
+data_MM_AMPO <- read_excel("Input/Metabolites/20240208_PM_AW_LSP13_24AW02_minimalmedium.xlsx", sheet = 1, range = "B523:K562")%>%
+  mutate(Compound = "AMPO")
+```
+
+```{r, warning=F, echo=F, include=FALSE}
+# combine the datasets
+results_MM <- rbind(data_MM_MBOA, data_MM_AMPO, data_MM_BOA, data_MM_APO)
+
+# reformat and merge with metadata (use Sample_Name of metadata for merging)
+results_MM %<>%  # prepare temporary column for merge 
+  mutate(Name = gsub("20240208_PM_AW_LSP13_24AW02_", "", Name)) %>% 
+  mutate(Name = gsub("20240208_PM_AW_LSP13_", "", Name)) %>% 
+  mutate(Sample = Name) %>%
+  filter(!Sample %in% c("MilliQ_Blk", "1_blk", "2_pool")) %>% 
+  left_join(metadata_MM %>% dplyr::select(Sample, Sample_Name, LSP13_genotype, Cond, TP, Rep) %>% 
+              filter(!Sample_Name %in% c("Blank", "Pool")) %>% mutate(Sample = as.character(Sample), by = "Sample"))
+
+
+results_MM$Compound = factor(results_MM$Compound, levels = c("MBOA", "AMPO", "BOA", "APO"))
+
+results_MM %<>% mutate(LSP13_genotype = gsub("wt", "1", LSP13_genotype)) %>% 
+  mutate(LSP13_genotype = gsub("𝛥2921𝛥2227𝛥3006 #1.1", "5", LSP13_genotype)) %>% 
+  mutate(LSP13_genotype = gsub("NBC", "7", LSP13_genotype))
+
+```
+
+Calculations concentrations
+
+```{r, warning=F, echo=F, message=F}
+results_MM %<>% dplyr::rename(Std_conc = `Std. Conc`)
+```
+
+Quantification & calculations: using a standard curve the samples are quantified
+
+```{r, warning=F, echo=F, message=F}
+results_MM_Std_11 <- results_MM %>% 
+  filter(grepl('Stds11x_', Name)) %>% 
+  filter(Type %in% "Standard") %>% 
+  filter(Std_conc != "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+results_MM_Zero <- results_MM %>% 
+  filter(grepl('Stds11x_', Name)) %>% 
+  filter(Std_conc %in% "0.000") %>% 
+  dplyr::select(Std_conc, Area, Compound)
+```
+
+```{r, warning=F, echo=F, message=F}
+results_MM_Std_11 <- rbind(results_MM_Std_11, results_MM_Zero)
+results_MM_Std_11 %<>% filter(!Std_conc %in% "NA")
+```
+
+```{r, warning=F, echo=F, message=F}
+results_MM_Std_11 %>% 
+  filter(Compound != "HMPAA") %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>% 
+  mutate(Area = as.numeric(Area)) %>% 
+  ggplot(aes(x= Std_conc, y = Area)) + 
+  geom_point(aes(colour = Compound), show.legend = FALSE) +
+  geom_smooth(method = "lm", color="black", formula = y ~ 0 + x) +
+  ggpmisc::stat_poly_eq(formula = y ~ 0 + x,
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
+                parse = TRUE, label.y.npc = "top", label.x.npc = "left") +
+  facet_wrap(~Compound, scales = "free") +
+  labs(y = "Area",
+       x = "Concentration")
+```
+
+```{r, warning=F, echo=F, message=F}
+St_slopes_11_MM <- results_MM_Std_11 %>% 
+  mutate(Compound = as.factor(Compound)) %>% 
+  mutate(Std_conc = as.numeric(Std_conc)) %>%
+  group_by(Compound) %>% 
+  do(lm(Area ~ 0 + Std_conc,  data = .) %>%  coef() %>%   as.data.frame() %>% slice(1))
+```
+
+```{r, warning=F, echo=F, message=F}
+colnames(St_slopes_11_MM) <- c("Compound", "Slope")
+```
+
+```{r, warning=F, echo=F, message=F}
+results_MM <- left_join(results_MM, St_slopes_11_MM, by = "Compound")
+results_MM <- left_join(results_MM, mol, by = "Compound")
+```
+
+```{r, warning=F, echo=F, message=F}
+results_MM$cols <- as.character(results_MM$Compound)
+results_MM[results_MM$Compound == "MBOA-Glc", ]$cols <- "cornflowerblue"
+results_MM[results_MM$Compound == "HMPMA", ]$cols <-  "darkolivegreen4"
+
+
+results_MM[results_MM$Compound == "AMPO", ]$cols <- "darkred"
+results_MM[results_MM$Compound == "AAMPO", ]$cols <- "firebrick1"
+results_MM[results_MM$Compound == "HMPAA", ]$cols <- "gold2"
+results_MM[results_MM$Compound == "MBOA", ]$cols <- "darkblue"
+
+results_MM[results_MM$Compound == "HMBOA", ]$cols <- "skyblue"
+results_MM[results_MM$Compound == "BOA", ]$cols <- "slateblue"
+
+
+results_MM[results_MM$Compound == "DIMBOA", ]$cols <-  "tan"
+results_MM[results_MM$Compound == "APO", ]$cols <-  "pink"
+# results_MM[results_MM$Compound == "AAPO", ]$cols <-  "palevioletred"
+
+temp <- data.frame(results_MM$Compound, results_MM$cols)
+temp <- plyr::ddply(temp, .variables="results_MM.Compound", .fun=unique)   #library(plyr)
+level_cols_Compound <- as.character(temp[,2])
+names(level_cols_Compound) <- temp[,1]
+```
+
+```{r, warning=F, echo=F, message=F}
+results_MM$Area_sample <- as.numeric(results_MM$Area) / 0.02
+results_MM$ng_sample <- results_MM$Area_sample / results_MM$Slope 
+results_MM$uMol <- (results_MM$ng_sample) / results_MM$M
+```
+
+
+## Plot MM
+
+### MBOA plots
+Fig 5d: Metabolization of MBOA in minimal medium supplemented with 500 uM MBOA. Prepare first separate plots for MBOA and AMPO together and for AMPO only. Combine afterwards
+```{r, warning=F, echo=F, message=F}
+#MBOA and AMPO
+Sphingo_mutant_metabo_MM_MBOAboth <- results_MM %>%
+  filter(TP %in% "TP68") %>% 
+  filter(Cond %in% c("MBOA500")) %>% 
+  filter(Compound %in% c("MBOA", "AMPO")) %>% 
+  mutate(Compound = factor(Compound, levels = c("MBOA", "AMPO"))) %>% 
+  ggplot(aes(x = LSP13_genotype, y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "summary", show.legend = TRUE) +
+  geom_point()+
+  scale_x_discrete(labels = c("WT", expression(Delta*"3bxdA"), "NBC"))+
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_classic() +
+  facet_wrap(~TP)+ 
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2)))+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 ), axis.title.x = element_blank(),
+        strip.background = element_blank()) +
+  labs(y = "concentration [µM]", x = "")
+
+#AMPO only
+Sphingo_mutant_metabo_MM_AMPOonly <- results_MM %>%
+  filter(TP %in% "TP68") %>% 
+  filter(Cond %in% c("MBOA500")) %>% 
+  filter(Compound %in% c("AMPO")) %>% 
+  mutate(Compound = factor(Compound, levels = c("AMPO"))) %>% 
+  ggplot(aes(x = LSP13_genotype, y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "summary", show.legend = TRUE) +
+  geom_point()+
+  scale_x_discrete(labels = c("WT", expression(Delta*"3bxdA"), "NBC"))+
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_classic() +
+     facet_wrap(~TP)+ 
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2)))+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 ), axis.title.x = element_blank(),
+        strip.background = element_blank()) +
+  labs(y = "concentration [µM]", x = "")
+
+
+MM_metabo_combined <- ggarrange(Sphingo_mutant_metabo_MM_MBOAboth, Sphingo_mutant_metabo_MM_AMPOonly, ncol = 1, common.legend = T, labels = c("d", ""), legend = "none", align = "v")
+
+MM_metabo_combined
+
+ggsave(plot = MM_metabo_combined,  filename = "Fig5d.svg", width = 7, height = 6, dpi = 300, scale = 2, units = "cm")
+
+```
+
+Fig 5cd: Combine plots of complex and minimal medium
+```{r, warning=F, echo=F, message=F}
+c_d_combined <- ggarrange(combined_TSB, MM_metabo_combined, ncol = 2, widths = c(2.5,1), common.legend = T, legend = "right")
+
+# ggsave(plot = c_d_combined,  filename = "Fig5cd.svg", width = 7, height = 6, dpi = 300, scale = 2, units = "cm")
+
+```
+
+
+#### BOA plots
+Fig S11d: Metabolization of BOA in minimal medium supplemented with 500 uM BOA. Shown are BOA and APO side by side
+```{r, warning=F, echo=F, message=F}
+Sphingo_mutant_metabo_MM_BOA_side <- results_MM %>%
+  filter(TP %in% "TP68") %>% 
+  filter(Cond %in% c("BOA500")) %>% 
+  filter(Compound %in% c("BOA", "APO")) %>% 
+  mutate(Compound = factor(Compound, levels = c("BOA", "APO"))) %>% 
+  ggplot(aes(x = LSP13_genotype, y = uMol)) +
+  geom_bar(aes(fill = Compound), stat = "summary", show.legend = TRUE) +
+  geom_point()+
+  scale_x_discrete(labels = c("WT", expression(Delta*"3bxdA"), "NBC"))+
+  scale_fill_manual(values = level_cols_Compound)+
+  theme_classic() + 
+  facet_wrap(~Compound, scales = "free_y", ncol = 2)+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0), axis.title.x = element_blank(), strip.background = element_blank()) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2)))+ #maybe change to 0.5
+  labs(y = "concentration [µM]", x = "")
+
+Sphingo_mutant_metabo_MM_BOA_side
+
+ggsave(plot = Sphingo_mutant_metabo_MM_BOA_side,  filename = "FigS11d.svg", width = 12, height = 8, dpi = 300, scale = 1, units = "cm")
+
+```
+
+
+```{r}
+sessionInfo()
+```
+
+

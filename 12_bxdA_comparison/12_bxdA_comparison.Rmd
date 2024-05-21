@@ -1,0 +1,358 @@
+---
+title: "Comparison bxdA"
+subtitle: "Thoenen et al. AMPO formation"
+author: "Lisa Thönen"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    fig_caption: yes
+    toc: true
+    toc_float: true
+    theme: cerulean
+    code_folding: show
+editor_options: 
+  chunk_output_type: console
+---
+
+# *bxdA* in other strains
+locus tag: LMB2-1.2_002078 genome: LMB2-1.2
+species: Microbacterium taxid: 33882
+KEGG gene name: *actIV*
+on amino acid level (AA)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+rm(list = ls())
+```
+
+```{r, include=FALSE}
+library("pheatmap")
+library("metacoder")
+library("magrittr")
+library("tidyverse")
+library("readxl")
+# library("rstatix")
+library("ggthemes")
+library("ggforce")
+library("ggpubr")
+library("pander")
+library("ggtree")
+```
+
+# Comparison among MRB
+
+### Amino acid sequence blast in open genome browser, all genomes which are in the database
+This includes all sequenced MRB strains (see Thönen et al 2023 PNAS), as well as the AtSPHERE strains used in this study.
+
+```{r, include=FALSE}
+identity_AA_MRB_all <- readxl::read_excel("Input/Blast_bxdA_AA_all_MRB.xlsx", sheet = "Blast_bxdA_AA_all_MRB")
+```
+
+```{r, include=FALSE}
+# install.packages("qdapRegex")
+identity_AA_MRB_all_sep <- identity_AA_MRB_all %>% 
+  separate(Description, into = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"), sep = "_")
+
+  
+identity_AA_MRB_all_sep_8 <- identity_AA_MRB_all_sep %>% 
+  filter(!`10` %in% NA) %>% 
+  filter(`10` %in% c("Pseudomonas", "Bacillus")) %>% 
+  mutate(`8` = case_when(`10` %in% c("Pseudomonas", "Bacillus") ~ `9`)) %>% 
+  mutate(`9` = case_when(`10` %in% c("Pseudomonas", "Bacillus") ~ `10`)) 
+
+identity_AA_MRB_all_sep_NA_in_10 <- identity_AA_MRB_all_sep %>% 
+  filter(`10` %in% NA) 
+
+identity_AA_MRB_all_sep_mod <- rbind(identity_AA_MRB_all_sep_NA_in_10, identity_AA_MRB_all_sep_8) %>% 
+  dplyr::select(-`1`, -`2`, -`3`, -`4`, -`5`, -`6`, - `10`, -`11`, -`12`, -`13`, -`14`, -`15`, -`16`) %>% 
+  dplyr::rename(Strain = `7`, gene = `8`, genus = `9`) %>% 
+  mutate(gene_nr = str_extract(gene, "[0-9]+")) %>% 
+  mutate(gene_name = qdapRegex::rm_number(gene)) %>% 
+  dplyr::select(-gene) %>% 
+  mutate(Identity = `Identities_%` * 100) %>% 
+  filter(!genus %in% "Cupriavidus") %>% 
+  mutate(Family = case_when(genus %in% "Microbacterium" ~ "Microbacteriaceae",
+                           genus %in% "Pseudarthrobacter" ~ "Micrococcaceae",
+                           genus %in% "Sphingobium" ~ "Sphingomonadaceae",
+                           genus %in% "Bacillus" ~ "Bacillaceae",
+                           genus %in% "Janthinobacterium" ~ "Oxalobacteraceae",
+                           genus %in% "Chitinophaga" ~ "Chitinophagaceae",
+                           genus %in% "Enterobacter" ~ "Enterobacteriaceae",
+                           genus %in% "Agrobacterium" ~ "Rhizobiaceae",
+                           genus %in% "Agrobacterium tumefaciens" ~ "Rhizobiaceae",
+                           genus %in% "Neorhizobium" ~ "Rhizobiaceae",
+                           genus %in% "Arthrobacter" ~ "Micrococcaceae",
+                           genus %in% "Pseudomonas" ~ "Pseudomonadaceae",
+                           genus %in% "Duganella" ~ "Oxalobacteraceae",
+                           genus %in% "Stenotrophomonas" ~ "Xanthomonadaceae",
+                           genus %in% "Pantoea" ~ "Erwiniaceae",
+                           genus %in% "Acinetobacter" ~ "Moraxellaceae",
+                           genus %in% "Pseudomonas putida" ~ "Pseudomonadaceae",
+                           genus %in% "Nocardioides" ~ "Nocardioidaceae",
+                           genus %in% "Streptomyces" ~ "Streptomycetaceae",
+                           genus %in% "Paenibacillus" ~ "Paenibacillaceae")) %>% 
+  mutate(Strain = gsub("-1.2", "", Strain)) %>% 
+  mutate(Strain = gsub("-1-1.1", "", Strain)) %>% 
+  mutate(Strain = gsub("Pseudomonas4", "LPD2", Strain)) %>% 
+  mutate(Strain = gsub("Pseudomonas3", "LPB4.O", Strain)) %>% 
+  mutate(Strain = gsub("Agrhizo1", "LRH8.O", Strain)) %>% 
+  mutate(Strain = gsub("Agrhizo2", "LRC7.O", Strain)) %>% 
+  mutate(Strain = gsub("LSY1", "LAC11", Strain)) %>% 
+  mutate(Strain = gsub("L20", "LBA20", Strain)) %>% 
+  mutate(Strain = gsub("LPE1", "LPE13", Strain)) %>% 
+  mutate(Phenotype = case_when(Strain %in% c("LWO14", "LWH13", "LMX7", "LMB2", "LM3X", "LWO12", "LWH11", "LBN7", "LWO13", "LWH12", "LTA6", "LWH10", "LMS4", "LWH7", "LMD1", "LWH3", "LWS13", "LSP13", "LMC3",
+                                             "LMA1", "LMZ1", "LME3") ~ "strong_AMPO_former",
+                               Strain %in% c("Leaf159", "Root1433D1", "LBA71", "LBA112", "LBA1", "LMS1", "LMN1", "Root322", "LAR12", "LPD1", "LMU1", "LMI12", "LST12", "LMK1", "LMC1", "LST15", "LST1", "LMO1",
+                                             "LPD2", "LPB4.O", "Leaf288", "LML1", "LBA21", "LBA20", "LMI1", "LMF1", "Root61", "LMG1", "LPE13", "Leaf151", "Leaf161", "LMI13", "LMI11", "Root280D1", "LBA3", 
+                                             "LMX9") ~ "no_AMPO_former",
+                               Strain %in% c("LRH13", "LRC7.O", "LMR1", "LRH8.O", "LAC11") ~ "weak_AMPO_former")) %>% 
+  mutate(id = rownames(.) %>% as.numeric()) %>% 
+  mutate(gene_nr_id = interaction(id, gene_nr)) %>% 
+  mutate(genus_gene_nr_id = interaction(genus, gene_nr_id))
+
+ 
+
+```
+
+
+```{r, warning = FALSE, error = FALSE, echo=FALSE, message=FALSE, include=F}
+# Similarity heatmap
+similarity_lactonase_MRB_all <- identity_AA_MRB_all_sep_mod %>% 
+  mutate(gene_nr_id = as.factor(gene_nr_id)) %>% 
+  ggplot(aes(x = 1, y = interaction(genus, gene_nr_id))) + 
+  geom_tile(aes(fill = Identity)) +
+  geom_text(aes(label = Identity))+
+  theme_bw() +
+  scale_fill_gradient2(low = "white", mid = "cornflowerblue", high = "darkred", midpoint = 0.4) +
+  theme(axis.text.x=element_blank())+ 
+  labs(y = "",
+       x = " ",
+       fill = "identity [%]")
+
+similarity_lactonase_MRB_all
+
+```
+
+
+
+```{r, warning = FALSE, error = FALSE, echo=FALSE, message=FALSE}
+MRB_blast_family_point_evalue_fill <- identity_AA_MRB_all_sep_mod %>%
+  mutate(Phenotype = factor(Phenotype, levels = c("strong_AMPO_former", "weak_AMPO_former", "no_AMPO_former", "NA"))) %>% 
+  mutate(Annotation_lactonase = case_when(gene_name %in% "N-acyl homoserine lactonase family protein" ~ "N-acyl homoserine lactonase family protein",
+                                          !gene_name %in% "N-acyl homoserine lactonase family protein" ~ "other")) %>% 
+  filter(eValue < 10e-05) %>% 
+  ggplot(aes(y = reorder(Family, (Identity)), x = Identity)) +
+  geom_jitter(aes(shape = Phenotype, color = log10(eValue)), width = 0.1, alpha =0.7, size = 2.5, show.legend = TRUE)+
+  theme_bw()+
+  scale_color_gradient2(low = "darkred",  mid = "cornflowerblue", na.value = "darkred", midpoint = 10e-21) +
+  scale_shape_manual(values = c(19, 15, 17), labels = c("strong AMPO-former", "weak AMPO-former", "non AMPO-former"))+
+   labs(y = "Family",
+       x = "Identities [%]",
+       shape = "Phenotype")
+
+
+MRB_blast_family_point_evalue_fill
+
+ggsave(plot = MRB_blast_family_point_evalue_fill,  filename = "Fig12b_bxdA_in_MRB.svg", width = 18, height = 6, dpi = 300, scale = 1, units = "cm")
+```
+
+
+### Comparison Microbacteria 
+
+```{r, include=FALSE}
+identity_AA_Micro <- read.table("Input/actIV_comparision_AA_Micro.txt")
+```
+
+```{r, warning = FALSE, error = FALSE, echo=FALSE, message=FALSE, fig.width=8.8, fig.height=6}
+similarity_lactonase_AA_Micro <- identity_AA_Micro %>% 
+  ggplot(aes(x = 1, y = V2)) + 
+  geom_tile(aes(fill = V5)) +
+  geom_text(aes(label = V5))+
+  theme_bw() +
+  scale_fill_gradient2(low = "white", mid = "cornflowerblue", high = "darkred", midpoint = 35) +
+  theme(axis.text.x=element_blank())+
+  labs(y = "",
+       x = " ",
+       fill = "identity [%]")
+
+similarity_lactonase_AA_Micro
+
+```
+
+```{r, , warning = FALSE, error = FALSE, echo=FALSE, message=FALSE, include=F}
+
+### Newick tree ###
+
+species_tree <- ape::read.tree("Input/SpeciesTree_rooted.txt")
+metadata <- read_excel("Input/MRB_Strains_Genomes.xlsx", sheet = 1)
+
+metadata_tree <- metadata %>% mutate(Host_plant = Collection) %>% 
+  dplyr::rename(Strain = Strain_ID) %>% 
+  mutate(Host_plant = gsub("Species_collection", "maize", Host_plant)) %>% 
+  mutate(Host_plant = gsub("Maize_collection", "maize", Host_plant)) %>% 
+  mutate(Host_plant = gsub("MBOA", "maize", Host_plant)) %>% 
+  mutate(Host_plant = gsub("Compartment_collection", "maize", Host_plant)) %>% 
+  mutate(Host_plant = gsub("AtSphere", "arabidopsis", Host_plant)) %>% 
+  mutate(Host_plant = case_when(Strain == "LBN7" ~ "brassica", Strain != "LBN7" ~ Host_plant)) %>% 
+  mutate(Host_plant = case_when(Strain == "LTA6" ~ "wheat", Strain != "LTA6" ~ Host_plant)) %>% 
+  mutate(Host_plant = case_when(Strain == "LMS4" ~ "medicago", Strain != "LMS4" ~ Host_plant)) %>% 
+  # mutate(Host_plant = case_when(Strain == "KHBO19" ~ "clover", Strain != "KHB019" ~ Host_plant)) %>% 
+  dplyr::select(Strain, AMPO_on_MBOA_plates, Host_plant) %>% 
+  filter(!Strain %in% NA) %>% 
+  filter(!Strain %in% "NA") %>% 
+  mutate(AMPO_on_MBOA_plates = gsub("no", "negative", AMPO_on_MBOA_plates)) %>% 
+  mutate(AMPO_on_MBOA_plates = gsub("yes", "positive", AMPO_on_MBOA_plates)) %>% 
+  add_row(Strain = "KHB019", AMPO_on_MBOA_plates = "negative", Host_plant = "clover") %>%  mutate(Host_plant = factor(Host_plant, levels = c("maize", "arabidopsis", "brassica", "medicago", "wheat", "clover", "NA")))
+  
+p <-  species_tree %>% 
+      ggtree::ggtree(branch.length = "branch.length", ladderize = TRUE)  %<+% metadata_tree + 
+      geom_tippoint(aes(color=AMPO_on_MBOA_plates), size = 3) + 
+      geom_tiplab(align=TRUE, linetype='dashed', linesize=.3, size = 3, offset = 0.02) + 
+      scale_color_manual(values = c("gold", "darkred")) +
+      xlim(0, 2) 
+
+metadata_tree_2 <- metadata_tree %>% 
+        mutate(Host_plant = gsub("brassica", "other", Host_plant)) %>% 
+        mutate(Host_plant = gsub("medicago", "other", Host_plant)) %>% 
+        mutate(Host_plant = gsub("wheat", "other", Host_plant)) %>% 
+        mutate(Host_plant = gsub("clover", "other", Host_plant))
+
+
+
+p_host_simple <-  species_tree %>% 
+      ggtree::ggtree(branch.length = "branch.length", ladderize = TRUE) %<+% metadata_tree_2 +
+      geom_tippoint(aes(color=Host_plant), size = 3) + 
+      geom_tiplab(align=TRUE, linetype='dashed', linesize=.3, size = 3, offset = 0.02) +
+      scale_color_manual(values = c("#3e5437", "tan3", "grey"), labels = c("maize", "arabidopsis", "other"), name = "Host plant") +
+      xlim(0, 2) 
+  
+      
+
+p_host_simple
+```
+
+```{r, message=F, echo=F, warning=F}
+gene_name <- read_excel("Input/gene_name_lactonase_Micro.xlsx")
+identity_AA_Micro_strain <- left_join(identity_AA_Micro %>% filter(!V2 %in% c("LWH71.2_003460")), gene_name, by = c("V2" = "gene"))
+
+identity_AA_Micro_strain_meta <- left_join(metadata, identity_AA_Micro_strain, by = c("Strain_ID" = "Strain"))
+```
+
+
+```{r, message=F, echo=F, warning=F, fig.width=15, fig.height=19}
+similarity_lactonase_AA_Micro_tree <- ggtree::gheatmap(p,
+         identity_AA_Micro_strain_meta %>%
+         dplyr::select(Strain_ID, V5) %>% unique() %>% 
+         as.data.frame() %>% column_to_rownames("Strain_ID") ,
+         offset=0.5,
+         width=0.5,
+         colnames=FALSE,
+         font.size = 3,
+         colnames_position = "top",
+         colnames_offset_y = 5,
+         colnames_angle = 90,
+         colnames_level = NULL,
+         hjust =1) +
+  scale_fill_gradient2(low = "white", mid = "cornflowerblue", high = "darkred", midpoint = 35) +
+  labs(fill = "identity [%]", color = "AMPO phenotype") 
+
+similarity_lactonase_AA_Micro_tree
+
+
+ggsave(plot = similarity_lactonase_AA_Micro_tree,  filename = "FigS12a_bxdA_similarity_microbacteria.svg", width = 16, height = 20, dpi = 300, scale = 1, units = "cm")
+```
+
+
+# Comparison JGI
+```{r, include=FALSE}
+JGI_blast <- read_excel("Input/231207_JGI_bxdA_AA_seq_BLAST_all.xlsx")
+
+# write(paste(as.character(JGI_blast$`Genome ID`), collapse=","), 'genomes_JGI.txt')
+
+JGI_genomes <- read_excel("Input/231207_bxdA_host_origin_JGI_all_categorized.xlsx")
+
+JGI_blast_genome <- left_join(JGI_blast, JGI_genomes, by = c("Genome ID" = "IMG Genome ID"))
+
+JGI_blast_genome %>% colnames()
+
+JGI_blast_genome %<>% dplyr::select(`Genome ID`, `Genome Name`, Identities, Phylum, Family, Genus, Species, Ecosystem_all, Ecosystem_category_all, Species_host, Compartment)
+```
+
+```{r, message=F, echo=F, warning=F, fig.width=7, fig.height=5}
+JGI_blast_genome %>% ggplot(aes(x = Ecosystem_all, y = Identities)) +
+  geom_violin()+
+  geom_point()
+```
+
+
+```{r, message=F, echo=F, warning=F, fig.width=14, fig.height=8}
+JGI_blast_genome %>% 
+  filter(!Compartment %in% NA) %>% 
+  # mutate(Compartment = gsub("NA", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Airways", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Feces", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Nose", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Feedstock", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Experiment", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Intertidal zone", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("River bed", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Gut", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Nest", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Ice", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Rock", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Heartwood", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("bark", "Other plant compartments", Compartment)) %>% 
+  mutate(Compartment = gsub("Deep subsurface", "Other plant compartments", Compartment)) %>% 
+  mutate(Compartment = gsub("Decomposed wood", "Other plant compartments", Compartment)) %>% 
+  mutate(Compartment = factor(Compartment, levels = c("Roots", "Root nodule", "Rhizosphere", "Soil", "Leaf", "Other plant compartments", "Other", "NA"))) %>% 
+  ggplot(aes(x = Compartment, y = Identities)) +
+  geom_boxplot()+
+  geom_point()
+  
+```
+
+
+```{r, message=F, echo=F, warning=F, fig.width=20, fig.height=18}
+JGI_blast_Family_comp <- JGI_blast_genome %>%
+  mutate(Compartment = gsub("NA", "not annotated", Compartment)) %>% 
+  mutate(Compartment = gsub("Airways", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Feces", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Nose", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Feedstock", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Experiment", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Intertidal zone", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("River bed", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Gut", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Nest", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Ice", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Rock", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("Heartwood", "Other", Compartment)) %>% 
+  mutate(Compartment = gsub("bark", "Other plant compartments", Compartment)) %>% 
+  mutate(Compartment = gsub("Deep subsurface", "Other plant compartments", Compartment)) %>% 
+  mutate(Compartment = gsub("Decomposed wood", "Other plant compartments", Compartment)) %>% 
+  mutate(Compartment = factor(Compartment, levels = rev(c("Roots", "Root nodule", "Rhizosphere", "Soil", "Leaf", "Other plant compartments", "Other", "not annotated")))) %>% 
+  # arrange((Compartment)) %>% 
+  ggplot(aes(y = reorder(Family, (Identities)), x = Identities)) +
+  geom_jitter(aes(colour = Compartment, fill = Compartment, size = Compartment), width = 0.1, shape = 21, alpha = 0.7, show.legend = TRUE)+
+  theme_bw()+
+  xlim(20,100) +
+  # theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0.5)) + 
+  scale_colour_manual(values = rev(c("brown2", "tan2", "khaki4", "salmon4", "yellowgreen", "#3e5437", "grey20", "grey50"))) +
+  scale_fill_manual(values = rev(c("brown2", "tan2", "khaki4", "salmon4", "yellowgreen", "#3e5437", "grey20", "grey50"))) +
+  labs(y = "Family",
+       x = "Identities [%]")
+
+JGI_blast_Family_comp
+
+ggsave(plot = JGI_blast_Family_comp,  filename = "FigS12c_bxdA_JGI_blast.svg", width = 20.1, height = 18, dpi = 300, scale = 1, units = "cm")
+```
+
+
+
+```{r}
+sessionInfo()
+```
+

@@ -1,0 +1,298 @@
+---
+title: "RNAseq experiment growth and metabolites"
+subtitle: "Thoenen et al. AMPO formation"
+author: "Lisa Thönen, updated by Christine Pestalozzi"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    fig_caption: yes
+    toc: true
+    toc_float: true
+    theme: cerulean
+    code_folding: show
+editor_options: 
+  chunk_output_type: console
+---
+
+Here we report the growth and metabolite data of the bacterial cultures used for the transcriptome experiment. Bacteria were grown for 16 hours in a laboratory shaker and one plate was grown in a tecan plate reader and used to analyse the growth data. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup
+
+```{r,include=FALSE}
+rm(list=ls())
+```
+
+```{r,include=FALSE}
+# install.packages("tidyverse") 
+# install.packages("magrittr") # for the %<>% function
+# install.packages("readxl") # to read excels
+# install.packages("MESS") # for auc function
+# install.packages("multcomp")
+# install.packages("emmeans")
+# install.packages("ggpubr")
+# install.packages("ggpmisc")
+# install.packages("ggbeeswarm")
+```
+
+```{r,include=FALSE}
+library("tidyverse")
+library("magrittr")
+library("readxl")
+library("MESS") 
+library("multcomp")
+library("emmeans")
+library("ggpubr")
+library("ggpmisc")
+library("ggbeeswarm")
+```
+Set working directory to source file location.
+
+# Bacterial growth
+Read in metadata
+Additional samples that are not relevant to this study were measured in the same plate. These are not annotated.
+
+```{r, echo=F, message=F, warning=F}
+metadata <- read.csv("Input/210324_RNAseq_experimental_design_metadata_LMB2.csv")
+```
+
+Read in raw data, combine with metadata and calculate change in absorbance relative to start 
+
+```{r, echo=F, message=F, warning=F}
+results <-  read_excel("Input/21.07.21_RNAseq_experiment.xlsx", sheet = 2, range = "A38:AE133", col_names = c("Well", 1:30)) %>% as.data.frame()
+results <- full_join(metadata, results, by = "Well")
+results <- results %>% gather(key = "Cycle", value = "Density", 8:ncol(.))
+results$hrs <- as.numeric((results$Cycle))/2
+results$Density <- as.numeric(results$Density)
+#Calculate change in absorbance relative to start
+results %<>%
+  # filter(!Strain %in% c("Ignore","None")) %>%
+  group_by(Strain, Treatment, Well) %>%
+  mutate(Density_increase = Density - Density[1]) %>%
+  ungroup %>% as.data.frame()
+
+```
+
+Plot raw data growth curves 16 hours
+
+```{r, echo=F, message=F, warning=F}
+results %>% 
+  filter(Strain %in% c("LMB2", "NBC")) %>%
+  ggplot(aes(x = hrs, y = Density_increase)) +
+  geom_line(aes(color = Treatment, linetype = as.factor(Replicate)), stat = "summary", fun.y = mean,  show.legend = TRUE, size = 1) +
+  facet_grid(~Strain, scales = "fixed") +
+  theme_bw() +
+  scale_color_manual(values = c("cornflowerblue", "maroon")) +
+  labs(y = "Absorbance change",
+       title = "Growth over 16 hours",
+       color = "Treatment")
+```
+
+Maximal growth 16 hours
+
+```{r, echo=F, message=F, warning=F}
+results %>%
+  filter(Strain %in% c("LMB2", "NBC")) %>%
+  filter(hrs %in% 15.0) %>%
+  filter(Treatment != "no") %>%
+  ggplot(aes(x = Treatment, y = Density)) +
+  geom_boxplot(aes(color = Treatment), show.legend = TRUE) +
+  geom_jitter(aes(color = Treatment), width = 0.05) +
+  stat_compare_means(label = "p.signif", method = "t.test", ref.group = "DMSO", label.y = 0.5) +
+  facet_grid(~Strain, scales = "fixed") +
+  theme_bw() +
+ scale_color_manual(values = c("cornflowerblue", "maroon")) +
+  labs(y = "Absorbance 600nm",
+       title = "max growth 16 hours",
+       color = "Treatment")
+```
+
+Area under the curve of 16 hrs of growth
+
+```{r, echo=F, message=F, warning=F, fig.width=7, fig.height=5}
+results_AUC_16 <- results %>% filter(hrs < 15.0) %>%  
+  group_by(Strain, Treatment, Well) %>%
+  dplyr::summarize(AUC = auc(hrs, Density_increase),
+            AUC_raw = auc(hrs, Density)) %>%
+  ungroup %>%
+  mutate(Treatment = as.factor(Treatment))
+```
+
+Fig S9a: growth LMB2 (AUC over 16 hours)
+
+```{r, echo=F, message=F, warning=F, fig.width=7, fig.height=5}
+RNAseq_LMB2_AUC <- results_AUC_16 %>%
+  filter(Treatment != "no") %>%
+  filter(Strain %in% "LMB2") %>%
+  ggplot(aes(x = Treatment, y = AUC)) +
+  geom_bar(fill = "#7e0021", alpha = 0.5, stat = "summary", position = "stack", size = 2, show.legend = FALSE) +
+  geom_jitter(width = 0.1) +
+  stat_compare_means(method = "t.test", aes(x = Treatment, y = AUC), label.y = 1.9) +
+  scale_y_continuous(limits = c(0, 2), expand = expansion(mult = c(0, 0)))+
+  theme_classic() +
+  labs(title = "Total bacterial growth",
+    y = "Bacterial growth [AUC]",
+       x = "")
+
+RNAseq_LMB2_AUC
+
+ggsave(plot = RNAseq_LMB2_AUC,  filename = "FigS9a.svg", width = 4, height = 5, dpi = 300, scale = 1, units = "cm")
+```
+
+Data single plates
+
+```{r, echo=F, message=F, warning=F}
+results_plate_1 <-  read_excel("Input/21.07.21_RNAseq_experiment_single_plate.xlsx", sheet = 1, range = "A38:B133", col_names = c("Well", 1:1))
+results_plate_1$Plate <- 1
+
+results_plate_2 <-  read_excel("Input/21.07.21_RNAseq_experiment_single_plate.xlsx", sheet = 2, range = "A38:B133", col_names = c("Well", 1:1))
+results_plate_2$Plate <- 2
+
+results_plate_3 <-  read_excel("Input/21.07.21_RNAseq_experiment_single_plate.xlsx", sheet = 3, range = "A38:B133", col_names = c("Well", 1:1))
+results_plate_3$Plate <- 3
+
+results_plate_4 <-  read_excel("Input/21.07.21_RNAseq_experiment_single_plate.xlsx", sheet = 4, range = "A38:B133", col_names = c("Well", 1:1))
+results_plate_4$Plate <- 4
+
+results_plate_5 <-  read_excel("Input/21.07.21_RNAseq_experiment_single_plate.xlsx", sheet = 5, range = "A38:B133", col_names = c("Well", 1:1))
+results_plate_5$Plate <- 5
+```
+
+```{r, echo=F, message=F, warning=F}
+results_plates <- rbind(results_plate_1, results_plate_2, results_plate_3, results_plate_4, results_plate_5)
+colnames(results_plates) <- c("Well", "Density", "Plate")
+
+results_plates <- left_join(results_plates, metadata, by ="Well")
+```
+
+remove samples which did not grew
+
+```{r, echo=F, message=F, warning=F}
+results_plates %<>% mutate(Well_Plate = interaction(Well, Plate, sep = "_"))
+
+```
+
+
+```{r, echo=F, message=F, warning=F}
+results_plates %>%
+  filter(Strain != "medium") %>%
+  filter(!Well_Plate %in% c("E5_1", "F9_3", "D2_3", "E2_3", "F7_4", "D3_4", "B7_5", "F10_2")) %>%
+  ggplot(aes(x = Treatment, y = Density)) +
+  geom_boxplot(aes(fill = Treatment), show.legend = TRUE) +
+  geom_jitter(aes(shape = as.factor(Plate)), width = 0.2) +
+  stat_compare_means(method = "t.test", aes(x = Treatment, y = Density), label.y = 0.95)+
+  stat_compare_means(label = "p.signif", method = "t.test", ref.group = "DMSO", label.y = 0.85) +
+  facet_grid(~Strain, scales = "fixed") +
+  theme_bw() +
+  labs(y = "Density",
+       title = "growth 16 hours",
+       color = "Treatment",
+       shape = "Plate")
+```
+
+# Bacterial metabolites
+Read in metadata and quantification of BX after 16 h of growth in half TSB supplemented with 500 uM MBOA or DMSO. Media controls taken at the beginning are included. 
+Additional samples not relevant to this study were run at the same time. These are not shown here.
+
+```{r, echo=F, message=F, warning=F}
+metadata_met <- read.csv("Input/210723_SampleList_Metabolites_RNAseq_LMB2.csv")
+```
+
+```{r, echo=F, message=F, warning=F}
+data <-  read.csv("Input/20210728_MH_LT_Bact_RNAseq_LMB2.csv")
+
+data %<>% dplyr::rename(ng_ml = `ng.ul`,
+                 Std_conc = `Std..Conc`)
+
+data$Name <- gsub("20210728_MH_LT_Bact_RNAseq_", "", data$Name)
+
+data$ng_ml[is.na(data$ng_ml)] = 0
+
+data_raw <- full_join(metadata_met, data, by = c("Sample_ID" = "Name"))
+```
+
+```{r, echo=F, message=F, warning=F}
+mol <- read_excel("Input/Molecular_weight_BXDs.xlsx")
+
+data <- left_join(data_raw, mol, by = "Compound")
+data %<>% mutate(M = as.numeric(M)) %>% mutate(molar = ((ng_ml/M) /0.04)) %>% as.data.frame()
+```
+
+
+Plot concentrations measured after 16 h for samples of LMB2, no bacteria control (NBC) and media controls taken at start of experiment (T0)
+```{r, echo=F, message=F, warning=F, fig.width=7, fig.height=5}
+data %>%
+  filter(!Strain %in% NA) %>%
+  filter(!Compound %in% NA) %>%
+  ggplot(aes(x = interaction(Strain, Treatment), y = ng_ml)) +
+  geom_bar(aes(fill = Treatment), stat = "summary", position = "dodge",  show.legend = FALSE) +
+  geom_errorbar(stat = "summary", position = position_dodge(width = 1), width=0.25) +
+  geom_jitter(width = 0.1) +
+  facet_wrap(~Compound, scales = "fixed") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0.5))
+```
+
+Plot measurements only for samples supplemented with MBOA at the beginning
+```{r, echo=F, message=F, warning=F, fig.width=7, fig.height=5}
+data %>%
+  filter(Treatment %in% "MBOA") %>%
+  ggplot(aes(x = Strain, y = ng_ml)) +
+  geom_bar(aes(fill = Treatment), stat = "summary", position = "dodge",  show.legend = FALSE) +
+  geom_errorbar(stat = "summary", position = position_dodge(width = 1), width=0.25) +
+  geom_jitter(width = 0.1) +
+  facet_wrap(~Compound, scales = "fixed") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0.5))
+```
+
+Fig S9b) Supplementary figure metabolisation of MBOA after 16 h
+
+```{r, echo=F, message=F, warning=F, fig.width=7, fig.height=5}
+RNAseq_LMB2_met_update <- data %>%
+  filter(Strain %in% c("LMB2", "NBC")) %>%
+  filter(Compound %in% c("MBOA", "AMPO")) %>%
+  filter(Treatment %in% "MBOA") %>%
+  ggplot(aes(x = Strain, y = molar)) +
+  geom_bar(aes(fill = Compound), stat = "summary", position = "identity", show.legend = TRUE) +
+  geom_jitter(width = 0.1) +
+  theme_classic() +
+  theme(axis.text.x=element_text(angle = 0),
+        strip.background = element_blank()) +
+  scale_fill_manual(values = c( "darkred", "darkblue"))+
+  scale_colour_manual(values = "grey50") +
+  scale_y_continuous(limits = c(0, 600), expand = expansion(mult = c(0, 0)))+
+  facet_wrap(~Compound, ncol = 2)+
+  labs(y = "Concentration [µM]",
+       x = "", 
+       title = "MBOA metabolite concentrations")
+
+RNAseq_LMB2_met_update
+
+ggsave(plot = RNAseq_LMB2_met_update, filename = "FigS9b.svg", width = 6.6, height = 8, dpi = 300, scale = 1, units = "cm")
+```
+
+
+```{r, echo=F, message=F, warning=F, include=F}
+# export of panels a and b for supplementary
+panels_ab <- ggarrange(RNAseq_LMB2_AUC, RNAseq_LMB2_met_update, ncol = 2, widths = c(1,2), labels = c("a", "b"), align = "v")
+
+
+# ggsave(plot = panels_ab, filename = "RNAseq_panelsab.pdf", width = 15.5, height = 7, dpi = 300, scale = 1.5, units = "cm")
+
+
+#metabolite samples
+data %>% filter(Strain %in% c("LMB2", "NBC")) %>% group_by(Strain, Treat, Compound) %>% summarise(n = n())
+
+#growth samples
+results_AUC_16 %>% group_by(Strain, Treatment)%>% summarise(n = n())
+```
+
+
+```{r}
+sessionInfo()
+```
+

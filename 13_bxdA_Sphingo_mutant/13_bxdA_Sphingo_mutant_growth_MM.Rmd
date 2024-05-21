@@ -1,0 +1,392 @@
+---
+title: "Sphingobium LSP13 d3bxdA, growth in minimal medium with MBOA/BOA"
+subtitle: "Thoenen et al. AMPO formation"
+author: "Christine Pestalozzi"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    fig_caption: yes
+    toc: true
+    toc_float: true
+    theme: cerulean
+    code_folding: show
+editor_options: 
+  chunk_output_type: console
+---
+
+# 0. Packages installation
+
+```{r, warning=FALSE, include=FALSE, eval = FALSE}
+# pckgs <- c("MESS",
+#            "emmeans",
+#            "dplyr",
+#            "magrittr",
+#            "tidyr",
+#            "ggplot2",
+#            "readxl",
+#            "ggthemes",
+#            "stringr",
+#            "purrr",
+#            "readr",
+#            "plater",
+#            "lubridate",
+#            "tydyverse",
+#            "ggpubr")
+# install.packages(pckgs)
+```
+
+```{r warning=FALSE, include=FALSE}
+library("plater")
+library("MESS")
+library("emmeans")
+library("dplyr")
+library("magrittr")
+library("tidyr")
+library("ggplot2")
+library("readxl")
+library("ggthemes")
+library("stringr")
+library("purrr")
+library("readr")
+library("tidyverse")
+library("lubridate")
+library("ggpubr")
+```
+
+
+Set working directory to source file location
+
+# 1. Data import & organization
+
+Prepare metadata
+We read in all the data and then focus and plot the 0 uM, 500 uM and 1250 uM BX conditions and the corresponding Glc control to be consistent with the other analyses. Additional conditions were run at the same time and are not shown.
+```{r warning=FALSE, include=FALSE}
+#set working directory to source file location
+Strain_data <- read_plate(
+  file = "Input/Growth_Data_MM/240124_Inoculation_Test_MBOA_BOA_96-wellPlate_Scheme_24AW0002.csv",             # full path to the .csv file
+  well_ids_column = "Well",    # name to give column of well IDs (optional)
+  sep = ","                     # separator used in the csv file (optional)
+)
+Strain_data <- tidyr::separate(Strain_data,Cond,sep = "_", into = c("Treatment", "Conc"), remove = FALSE) # separate the treatment and concentration to columns
+Strain_data$replicates <- factor(Strain_data$replicates)
+
+Strain_data$Inoc[Strain_data$Inoc=="1"]<-"WT"
+Strain_data$Inoc[Strain_data$Inoc=="2"]<-"d3bxdA"
+Strain_data$Inoc[Strain_data$Inoc=="3"]<-"NBC"
+
+color_cond <- c("MBOA_500" = "royalblue1", "MBOA_1250" = "royalblue3", "MBOA_2500" = "royalblue4",
+                "DMSO_0"= "grey",
+                "BOA_500" = "chocolate1" ,"BOA_1250" = "chocolate3" ,"BOA_2500" = "chocolate4" ,
+                "Glc_667" = "seagreen1", "Glc_1667" = "seagreen2", "Glc_20000" = "seagreen3", "Glc_30000" = "seagreen4")
+
+
+colors_strains <- c("WT" = "firebrick", 
+                    "d3bxdA" = "firebrick1", 
+                    "NBC" = "grey")  
+
+Cond_FigureS11 <- c("MBOA_500", "MBOA_1250", 
+                "BOA_500","BOA_1250",
+                "Glc_667", "Glc_1667",
+                "DMSO_0") 
+
+Cond_Figure5e <- c("MBOA_500", "MBOA_1250", 
+                "Glc_667", "Glc_1667",
+                "DMSO_0") 
+
+Strain_data <- arrange(Strain_data, Strain_data$Cond, Strain_data$Inoc) 
+
+```
+
+Load raw data and modify well labeling
+```{r warning=FALSE, include=FALSE}
+results_raw <- readxl::read_excel("Input/Growth_Data_MM/240130_LSP13_bxdA_mutant_MBOA_BOA_solecarb_24AW0002.xlsx", range = "B33:CU590") %>%   
+  tidyr::pivot_longer(names_to = "Well", values_to = "Density", cols = A1:H12)  %>%
+          dplyr::rename( Temp = `T° Read 1:600` )                                             #add the temperature information
+results_raw$Well <- gsub("(?<![0-9])([0-9])(?![0-9])", "0\\1", results_raw$Well, perl = TRUE)    #change the A1 to A01...
+```
+
+Add time interval. 
+```{r warning=FALSE, include=FALSE}
+date <- readxl::read_excel("Input/Growth_Data_MM/240130_LSP13_bxdA_mutant_MBOA_BOA_solecarb_24AW0002.xlsx", range = "B7:B7", col_names = F)[[1]] #The date and time wells are always located the same in each file.
+time <- readxl::read_excel("Input/Growth_Data_MM/240130_LSP13_bxdA_mutant_MBOA_BOA_solecarb_24AW0002.xlsx", range = "B8:B8", col_names = F)[[1]]
+date_time <- update(time,year= lubridate::year(date),month = lubridate::month(date), day = lubridate::day(date)) # Add the date and time together as the reference for start point.
+
+results_raw <- results_raw %>%
+  group_by(Well) %>%
+  mutate(mins = difftime(Time, Time[1], units = "mins") %>% as.numeric(),
+         hrs = difftime(Time, Time[1], units = "hours") %>% as.numeric(),
+        )  %>% 
+  ungroup() %>% 
+  dplyr::select(-Time)
+
+```
+
+Combine the metadata with the raw data 
+```{r, echo=FALSE, message=FALSE, include=FALSE}
+results_raw <- left_join(results_raw, Strain_data, by = "Well") 
+
+results_raw$Column = as.numeric(gsub("\\D", "", results_raw$Well))
+results_raw <- results_raw %>%
+  extract(Well, c("Row"), regex = "([A-Z]+)", remove = FALSE) 
+
+results_raw <- results_raw %>% filter(Cond %in% Cond_FigureS11)
+
+```
+
+
+# 2.density data
+Calculate the absorbance increase relative to the start (Density delta)
+```{r, warning=FALSE, include=FALSE}
+results <- results_raw %>%
+  dplyr::arrange(mins) %>% 
+  group_by(Well) %>%
+  mutate(Density_delta = Density - Density[1]) %>%
+  mutate(Density_1 = Density[1]) %>%
+  mutate(Density_max = max(Density)) %>%
+  ungroup %>%
+  as.data.frame()
+
+results$Inoc <- factor(results$Inoc, levels = c("WT", "d3bxdA", "NBC"))
+results$Cond <- factor(results$Cond, levels = Cond_FigureS11)
+```
+
+Plot maximal absorbance to check if all strains grew in the control treatment. 
+Plot the mean and individual points to check for differences between treatments
+```{r, echo=FALSE, error=FALSE,message=FALSE, warning=FALSE}
+results %>%
+  group_by(Inoc, Cond) %>%
+  ggplot(aes(x = Inoc, y = Density_max))+
+  geom_bar(stat = "summary", aes(fill = Inoc), width = 0.5)+
+  geom_point(data = results, aes(x = Inoc, y = Density_max))+
+  geom_point() + 
+  scale_fill_manual(values = colors_strains)+
+  theme_classic()+
+  facet_wrap(~Cond , scales = "free_y")+
+  labs(x = "Strain",
+       y = "max Absorbance", 
+       title = "Maximal absorbance",
+       color = "Strain")
+
+```
+
+Check the replicates variation in each strain and condition combination.
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE, include = FALSE}
+results %>% 
+  mutate(replicates = as.factor(replicates)) %>% 
+  ggplot(aes(x=hrs, y= Density_delta, color = replicates)) +
+  geom_point(size=0.1) +
+  facet_grid(Cond ~ Inoc, scales = "free_y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = -90, hjust = 1)) +
+  labs(x = "Time [hours]",
+       y = expression(OD ["600nm"]), 
+       title = "Replicates",
+       subtitle = "within replicate variation", 
+       color = "replicates")
+
+```
+
+# 3. Growth curves
+
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE, include=FALSE}
+# Check the growth curve of each well
+results %>% 
+  ggplot(aes(x=hrs, y= Density_delta)) +
+  geom_line(aes(color = Cond), show.legend = FALSE) +
+  facet_grid(Row ~ Column, scales = "fixed") +
+  theme_bw() +
+  scale_color_manual(values = color_cond)+
+  theme(axis.text.x = element_text(angle = -90, hjust = 1)) +
+  labs(x = "Time [hours]",
+       y = expression(OD ["600nm"]), 
+       title = "Growth curves in each well",
+       subtitle = "check for contamination", 
+       color = "Run")
+
+```
+
+FigS11a: mean and se plots of growth curves. 
+```{r, message=FALSE, echo=FALSE, error=FALSE, warning = FALSE, fig.dim = c(9, 7)}
+meanAbs <- results %>% 
+  group_by(Inoc, Cond, mins, hrs) %>% 
+  summarise(Abs.mean = mean(Density), Abs.se = sd(Density)/sqrt(3),
+            Absdiff.mean = mean(Density_delta), Absdiff.se = sd(Density_delta)/sqrt(3), 
+            min = min(Density), max = max(Density))
+
+BOA_plot <- meanAbs %>%  
+  filter(Cond %in% c("BOA_500", "BOA_1250")) %>% 
+  ggplot(aes(x = hrs, y = Abs.mean))+
+  geom_line(aes(color = Inoc))+
+  geom_errorbar(aes(ymin = Abs.mean-Abs.se, ymax = Abs.mean+Abs.se, color = Inoc) , stat = "identity", alpha = 0.2)+
+  scale_color_manual(values = colors_strains, 
+                     labels = c("WT", expression(paste(Delta, "3bxdA")), "NBC"))+
+  theme_bw()+
+  scale_y_continuous(limits = c(0.075, 0.425), expand = expansion(mult = c(0,0)))+
+  facet_wrap(~Cond)+
+  labs(x = "Time [hours]",
+       y = "Absorbance at 600 nm", 
+       color = "Strain")
+
+MBOA_plot <- meanAbs %>%  
+  filter(Cond %in% c("MBOA_500", "MBOA_1250")) %>% 
+  ggplot(aes(x = hrs, y = Abs.mean))+
+  geom_line(aes(color = Inoc))+
+  geom_errorbar(aes(ymin = Abs.mean-Abs.se, ymax = Abs.mean+Abs.se, color = Inoc) , stat = "identity", alpha = 0.2)+
+  scale_color_manual(values = colors_strains, 
+                     labels = c("WT", expression(paste(Delta, "3bxdA")), "NBC"))+
+  theme_bw()+
+  scale_y_continuous(limits = c(0.075, 0.425), expand = expansion(mult = c(0,0)))+
+  facet_wrap(~Cond)+
+  labs(x = "Time [hours]",
+       y = "Absorbance at 600 nm", 
+       color = "Strain")
+
+Glc_plot <- meanAbs %>%  
+  filter(Cond %in% c("Glc_667", "Glc_1667")) %>% 
+  ggplot(aes(x = hrs, y = Abs.mean))+
+  geom_line(aes(color = Inoc))+
+  geom_errorbar(aes(ymin = Abs.mean-Abs.se, ymax = Abs.mean+Abs.se, color = Inoc) , stat = "identity", alpha = 0.2)+
+  scale_color_manual(values = colors_strains, 
+                     labels = c("WT", expression(paste(Delta, "3bxdA")), "NBC"))+
+  theme_bw()+
+  scale_y_continuous(limits = c(0.075, 0.425), expand = expansion(mult = c(0,0)))+
+  facet_wrap(~Cond)+
+  labs(x = "Time [hours]",
+       y = "Absorbance at 600 nm", 
+       color = "Strain")
+
+DMSO_plot <- meanAbs %>%  
+  filter(Cond %in% c("DMSO_0", "Glc_667")) %>% 
+  ggplot(aes(x = hrs, y = Abs.mean))+
+  geom_line(aes(color = Inoc))+
+  geom_errorbar(aes(ymin = Abs.mean-Abs.se, ymax = Abs.mean+Abs.se, color = Inoc) , stat = "identity", alpha = 0.2)+
+  scale_color_manual(values = colors_strains, 
+                     labels = c("WT", expression(paste(Delta, "3bxdA")), "NBC"))+
+  theme_bw()+
+  scale_y_continuous(limits = c(0.075, 0.425), expand = expansion(mult = c(0,0)))+
+  facet_wrap(~Cond)+
+  labs(x = "Time [hours]",
+       y = "Absorbance at 600 nm", 
+       color = "Strain")
+
+
+Plots_FiguresS11a_combined <- ggarrange(MBOA_plot, BOA_plot, Glc_plot, DMSO_plot, ncol =1, common.legend = TRUE, legend = "right", align = "v")
+
+
+ggsave(plot = Plots_FiguresS11a_combined, filename = "FigS11a.svg", width = 20, height = 26, dpi = 300, scale = 1, units = "cm")
+
+Plots_FiguresS11a_combined
+
+```
+
+# 4. Area under the curve - growth
+
+To quantify the total bacterial growth over time, we calculate the total area under the curve (AUC).
+This is done with the function "auc()". We use the change in OD relative to the first measurement. 
+
+```{r, warning=FALSE, include=FALSE}
+
+results_AUC <- results %>% 
+  unique() %>%
+  group_by(Inoc, Well, Cond, Treatment, Conc, replicates) %>%
+  dplyr::summarize(AUC = auc(hrs, Density_delta), 
+            AUC_raw = auc(hrs, Density)) %>%
+  ungroup %>%
+  filter(Cond %in% Cond_FigureS11) %>% 
+  mutate(Treatment = as.factor(Treatment),
+         Cond = factor(Cond, levels = Cond_FigureS11)) 
+
+```
+
+Fig 5e: Barplot of mean and the individual points for LSP13 wt and the triple bxdA mutant and the NBC for Figure 5e
+```{r, warning = FALSE, error = FALSE, echo=FALSE, message=FALSE, fig.dim = c(9, 7)}
+
+mean_AUC <- results_AUC %>%
+  group_by(Inoc, Cond, Conc, Treatment) %>%
+  summarise(AUC.mean = mean(AUC), AUC.se = sd(AUC)/sqrt(3),
+            AUC_raw.mean = mean(AUC_raw), AUC_raw.se = sd(AUC_raw)/sqrt(3)) %>%
+  mutate(Inoc = factor(Inoc, levels = c("WT", "d3bxdA", "NBC")))
+
+results_AUC$Inoc <- factor(results_AUC$Inoc, levels = c("WT", "d3bxdA", "NBC"))
+
+# AUC based on density increase over time. 
+plot_AUC_Figure5e <- ggplot(mean_AUC %>%  filter(Cond %in% Cond_Figure5e) %>% mutate(Cond = factor(Cond, levels = Cond_Figure5e)), aes(x = Cond, y = AUC.mean))+
+  geom_bar(stat = "identity", position = position_dodge(), aes(fill = Inoc), width = 0.9)+
+  geom_point(data = results_AUC %>%  filter(Cond %in% Cond_Figure5e) %>% mutate(Cond = factor(Cond, levels = Cond_Figure5e)), aes(x = Cond, y = AUC, shape = Inoc), position = position_dodge(0.9))+
+  theme_classic()+
+    theme(axis.title.x = element_blank())+
+    scale_fill_manual(values = colors_strains, 
+                     labels = c("WT", expression(paste(Delta, "3bxdA")), "NBC"))+
+  scale_shape_manual(values = c(16,16,16))+
+  theme(legend.position = "top")+
+  guides(shape="none")+
+  labs(y = "Bacterial growth [AUC]", 
+       color = "Strain") 
+
+
+# Welch's t-test comparisons of wt vs mutant
+t.test_wt_mut <- compare_means(AUC ~ Inoc, data = results_AUC[results_AUC$Inoc != "NBC" & results_AUC$Cond %in% Cond_Figure5e, ], 
+              group.by = "Cond", method = "t.test")
+
+
+plot_AUC_Figure5e
+
+ggsave(plot = plot_AUC_Figure5e, filename = "Fig5e.svg", width = 16, height = 8, dpi = 300, scale = 1, units = "cm")
+
+```
+
+For additional comparison with BOA (500 and 1250 uM)
+```{r, warning = FALSE, error = FALSE, echo=FALSE, message=FALSE, fig.dim = c(9, 7)}
+BOA_cond <-  c("BOA_500", "BOA_1250")
+BOA_AUC <- ggplot(mean_AUC %>%  filter(Cond %in% BOA_cond) %>% mutate(Cond = factor(Cond, levels = BOA_cond)), aes(x = Cond, y = AUC.mean))+
+  geom_bar(stat = "identity", position = position_dodge(), aes(fill = Inoc), width = 0.9)+
+  geom_point(data = results_AUC %>%  filter(Cond %in% BOA_cond) %>% mutate(Cond = factor(Cond, levels = BOA_cond)), aes(x = Cond, y = AUC, shape = Inoc), position = position_dodge(0.9))+
+  theme_classic()+
+    theme(axis.title.x = element_blank())+
+    scale_fill_manual(values = colors_strains, 
+                     labels = c("WT", expression(paste(Delta, "3bxdA")), "NBC"))+
+  scale_shape_manual(values = c(16,16,16))+
+  theme(legend.position = "top")+
+  guides(shape="none")+
+  labs(y = "Bacterial growth [AUC]", 
+       color = "Strain") 
+
+MBOA_AUC <- ggplot(mean_AUC %>% filter(Cond %in% c("MBOA_500", "MBOA_1250")), aes(x = Cond, y = AUC.mean))+
+  geom_bar(stat = "identity", position = position_dodge(), aes(fill = Inoc), width = 0.9)+
+  geom_point(data = results_AUC %>% filter(Cond %in% c("MBOA_500", "MBOA_1250")), aes(x = Cond, y = AUC, shape = Inoc), position = position_dodge(0.9))+
+  theme_classic()+
+      scale_fill_manual(values = colors_strains, 
+                     labels = c("WT", expression(paste(Delta, "3bxdA")), "NBC"))+
+      scale_shape_manual(values = c(16,16,16))+
+    theme(axis.title.x = element_blank())+
+    guides(shape = "none")+
+  labs(y = "Bacterial growth [AUC]", 
+       color = "Strain")
+
+Controls_AUC <- ggplot(mean_AUC %>% filter(Cond %in% c("Glc_667", "Glc_1667")) %>% mutate(Cond = factor(Cond, levels = c("Glc_667", "Glc_1667"))), aes(x = Cond, y = AUC.mean))+
+  geom_bar(stat = "identity", position = position_dodge(), aes(fill = Inoc), width = 0.9)+
+  geom_point(data = results_AUC %>% filter(Cond %in% c("Glc_667", "Glc_1667")) %>% mutate(Cond = factor(Cond, levels = c("Glc_667", "Glc_1667"))), aes(x = Cond, y = AUC, shape = Inoc), position = position_dodge(0.9))+
+  theme_classic()+
+      scale_shape_manual(values = c(16,16,16))+
+      scale_fill_manual(values = colors_strains, 
+                     labels = c("WT", expression(paste(Delta, "3bxdA")), "NBC"))+
+  theme(axis.title.x = element_blank())+
+  guides(shape = "none")+
+  labs(y = "Bacterial growth [AUC]", 
+       color = "Strain")
+
+t.test_wt_mut_BOA <- compare_means(AUC ~ Inoc, data = results_AUC[results_AUC$Inoc != "NBC" & results_AUC$Cond %in% c("BOA_500", "BOA_1250"), ], 
+              group.by = "Cond", method = "t.test")
+
+
+AUC_combined_plot <- ggarrange(MBOA_AUC, BOA_AUC, Controls_AUC, nrow = 3, common.legend = T, align = "v")
+AUC_combined_plot
+
+
+
+```
+
+```{r}
+sessionInfo()
+```
+
