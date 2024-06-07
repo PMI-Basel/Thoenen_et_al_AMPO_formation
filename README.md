@@ -2,9 +2,9 @@ This repository contains data and code used for analysis and plotting of figures
 
 The following figures or panels therein are produced with the scripts in the following folders. For the scripts to run properly, the working directory needs to be set to the source file location. 
 
-01_Root_plating_assay: Figures 1b, 1c
-02_MRB_screen_tree: Figures 1d, S4
-03_AtSphere_screen_tree: Figure S7a
+01_Root_plating_assay: Figures 1b, 1c  
+02_MRB_screen_tree: Figures 1d, S4  
+03_AtSphere_screen_tree: Figure S7a  
 04_AtSphere_metabolites: Figure S7b
 05_Metabolite_screen: Figures 2a, 2b, S5a, S5b, S5c
 06_Metabolite time series: Figure 2c
