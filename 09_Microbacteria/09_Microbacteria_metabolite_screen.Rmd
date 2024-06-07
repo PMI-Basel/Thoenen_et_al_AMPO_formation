@@ -39,9 +39,9 @@ rm(list = ls())
 ```
 
 ```{r, warning=F, echo=F, message=F}
-# if (!require("BiocManager", quietly = TRUE))
-#     install.packages("BiocManager")
-# 
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
 # BiocManager::install("ggtree")
 ```
 
@@ -284,7 +284,6 @@ met %>%
   theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) 
 ```
 
-
 ```{r, warning=F, echo=F, message=F}
 met %>%
   mutate(Area = as.numeric(Area)) %>%
@@ -299,6 +298,7 @@ met %>%
 
 ## Phylogenetic tree
 Prepare tree with information on host origin
+
 ```{r, warning=F, echo=F, message=F}
 ### Newick tree ###
 species_tree <- ape::read.tree("Input/SpeciesTree_rooted.txt")
@@ -330,7 +330,7 @@ p_host_simple <-  species_tree %>%
       ggtree::ggtree(branch.length = "branch.length", ladderize = TRUE) %<+% metadata_tree_2 +
       geom_tippoint(aes(color=Host_plant), size = 3) + 
       geom_tiplab(align=TRUE, linetype='dashed', linesize=.3, size = 3, offset = 0.02) +
-      scale_color_manual(values = c("#3e5437", "tan3", "grey"), labels = c("maize", "arabidopsis", "other"), name = "Host plant") +
+      scale_color_manual(values = c("#3e5437", "tan3", "grey"), labels = c("arabidopsis", "maize", "other"), name = "Host plant") +
       xlim(0, 2) 
 
 # p_host_simple
@@ -471,7 +471,6 @@ MBOA_AMPO_met_tax_shape_OG_host
 ```
 
 
-
 ```{r, warning=F, echo=F, message=F}
 met_bar_phylo <- met %>% filter(Treatment %in% "MBOA") %>% filter(!Compound %in% c("AMPO", "AAMPO")) %>% dplyr::select(Strain, Compound, uMol) %>% pivot_wider(names_from = Compound, values_from = uMol) 
 
@@ -556,7 +555,7 @@ metDA_Std_11 %<>% filter(!Std_conc %in% "NA")
 
 ```{r, warning=F, echo=F, message=F, fig.width=15, fig.height=12}
 metDA_Std_11 %>% 
-  filter(!Compound %in% c("AAPO", "HMPAA", "DIBOA-Glc", "HBOA-Glc", "HM2BOA-Glc", "HMBOA-Glc", "MAPH")) %>% 
+  filter(!Compound %in% c("AAPO", "HMPAA", "DIBOA-Glc", "HBOA-Glc", "HM2BOA-Glc", "HMBOA-Glc", "MAPH", "MAP")) %>% 
   mutate(Std_conc = as.numeric(Std_conc)) %>% 
   mutate(Area = as.numeric(Area)) %>% 
   ggplot(aes(x= Std_conc, y = Area)) + 
@@ -784,7 +783,7 @@ metDA_bar_phylo <- metDA %>% filter(Treatment %in% "G") %>% dplyr::select(Strain
 metDA_bar_phylo$Strain <- gsub("NBC", "KHB019", metDA_bar_phylo$Strain)
 metDA_bar_phylo %<>% as.data.frame()
 
-metDA_phylo <- metDA %>% filter(Treatment %in% "G") %>% filter(Strain != "T0") %>% filter(!Compound %in% c("HDM2BOA-Glc", "DIM2BOA-Glc")) %>% dplyr::select(Strain, Compound, uMol)
+metDA_phylo <- metDA %>% filter(Treatment %in% "G") %>% filter(Strain != "T0") %>% filter(!Compound %in% c("HDM2BOA-Glc", "DIM2BOA-Glc", "MAP")) %>% dplyr::select(Strain, Compound, uMol)
 metDA_phylo$Strain <- gsub("NBC", "KHB019", metDA_phylo$Strain) # for exporting of NBC condition because KHB019 was not measured
 ```
 
@@ -1101,15 +1100,15 @@ results %>%  filter(Media %in% "MM") %>%
 
 ## AUC 
 
-To quantify the total bacterial growth over time, we calculate the total area under the curve. This is done with the function "auc()" For comparison between treatments, the total AUC (calculated using density increase) and AUC_raw (calculated using raw density) is normalized with the AUC of the strain grown in the control treatment (no chemicals added, just normal growth media with DMSO). 
+To quantify the total bacterial growth over time, we calculate the total area under the curve. This is done with the function "auc()". Before that, negative values for density increase were filtered out (i.e., strains or replicates that didn't grow). For comparison between treatments, the total AUC (calculated using density increase) and AUC_raw (calculated using raw density) is normalized with the AUC of the strain grown in the control treatment (no chemicals added, just normal growth media with DMSO). 
 
 ```{r, warning=FALSE, include=FALSE, echo=F, include=F}
 results_AUC <- results %>% 
   filter(Treat != "Dummy") %>% 
+  filter(Density_increase > 0) %>% # removes 'negative' growth curves
   filter(!Strain %in% c("no", NA)) %>% 
   group_by(Strain, Well, Chem, Media, Plate, Replicate, Run) %>%
-  dplyr::summarize(AUC = auc(hrs, Density_increase), 
-            AUC_raw = auc(hrs, Density)) %>%
+  dplyr::summarize(AUC = auc(hrs, Density_increase), AUC_raw = auc(hrs, Density)) %>%
   ungroup %>% 
   mutate(Chem = as.factor(Chem),
          Plate = as.factor(Plate),
@@ -1151,6 +1150,8 @@ results_AUC %>%
          colour = "AMPO on plate")
 ```
 
+### TSB
+
 ```{r, echo=F, warning=F, message=F, fig.width=20, fig.height=15, include=F}
 results_AUC %>%  
   filter(Media %in% "TSB") %>% 
@@ -1167,8 +1168,28 @@ results_AUC %>%
          colour = "AMPO on plate")
 ```
 
+### Minimal media
+
+```{r, echo=F, warning=F, message=F, fig.width=20, fig.height=15, include=F}
+results_AUC %>%  
+  filter(Media %in% "MM") %>% 
+  filter(Chem %in% c("DMSO", "MBOA")) %>% 
+  ggplot(aes(x= interaction(as.factor(Chem)), y= AUC_raw)) +
+  geom_boxplot(aes(fill = AMPO_on_MBOA_plates), position=position_dodge()) + 
+  geom_jitter(width = 0.1) + 
+  ggpubr::stat_compare_means(label = "p.signif", method = "t.test", ref.group = "DMSO", label.y.npc = 0.95) +
+  facet_wrap(~Strain, scales = "free_y") +
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 1.1)))+
+  scale_fill_manual(values = c("cornflowerblue", "darkred")) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0.5)) +
+    labs(y = "AUC", 
+         title = "Growth of strains in TSB",
+         colour = "AMPO on plate")
+```
+
 ```{r, echo=F, warning=F, message=F, include=FALSE}
-results %>% filter(Media %in% "MM") %>% filter(Strain %in% "LMB2") %>% dplyr::select(Well, Treat, Replicate, Media, Chem, Run, Well_Plate,  Strain, Plate, Rep, Nr, Block) %>% unique()
+# results %>% filter(Media %in% "MM") %>% filter(Strain %in% "LMB2") %>% dplyr::select(Well, Treat, Replicate, Media, Chem, Run, Well_Plate,  Strain, Plate, Rep, Nr, Block) %>% unique()
 ```
 
 ## Plotting growth curves of minimal media
@@ -1202,6 +1223,33 @@ growth_curves_MBOA_Micros_AMPO
 ```
 
 ```{r, echo=F, warning=F, message=F, fig.width=20, fig.height=15}
+growth_curves_MBOA_Micros_AMPO_pos <- results %>% 
+  # filter(AMPO_on_MBOA_plates %in% "yes") %>% 
+  filter(Media %in% "MM") %>% 
+  filter(!Strain %in% c("no", "NBC")) %>% 
+  filter(Chem %in% c("DMSO", "MBOA")) %>%
+  filter(Density_increase > 0) %>% 
+  mutate(Chem_Media = interaction(Chem, Media, sep = "_")) %>% 
+  dplyr::arrange(desc(AMPO_on_MBOA_plates)) %>% 
+  ggplot(aes(x=hrs, y= Density_increase, color = Chem_Media)) +
+  geom_line(aes(linetype = interaction(Replicate, Run, as.factor(Block))), stat = "identity", show.legend = TRUE) +
+  facet_wrap(~reorder(Strain, desc(AMPO_on_MBOA_plates)), scales = "fixed") +
+  scale_color_manual(values = c("#bebebe","#555ccb"),
+                     labels = c("DMSO", "MBOA 500 μM"))+
+  scale_linetype_manual("Replicate", values=c(1:12), labels=c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"))+
+  # ylim(0,1.3)+
+  theme_bw() +
+  labs(x = "Time [hours]",
+        y = "Bacterial growth [OD600]", 
+        title = "Bacterial growth with MBOA as sole carbon source",
+        subtitle = "AMPO-forming Microbactera",
+        linetype = "Replicate",
+        color = "Chemical")
+
+growth_curves_MBOA_Micros_AMPO_pos
+```
+
+```{r, echo=F, warning=F, message=F, fig.width=20, fig.height=15}
 growth_curves_MBOA_Micros_no_AMPO <- results %>% 
   filter(AMPO_on_MBOA_plates %in% "no") %>% 
   filter(Media %in% "MM") %>% 
@@ -1229,7 +1277,6 @@ growth_curves_MBOA_Micros_no_AMPO
 
 ## Phylogenetic tree
 
-
 ```{r, include=FALSE}
 results_AUC_mean_MM <- results_AUC %>% filter(Media %in% "MM") %>% group_by(Strain, Chem) %>%
   dplyr::summarise(mean = mean(AUC), n = n()) %>% 
@@ -1255,12 +1302,65 @@ results_AUC_mean_MM_MBOA_pos <- results_AUC_mean_MM_MBOA
 results_AUC_mean_MM_MBOA_pos$AUC_mean <- ifelse(results_AUC_mean_MM_MBOA_pos$AUC_mean < 0, 0, results_AUC_mean_MM_MBOA_pos$AUC_mean)
 ```
 
+Fig 8c: Growth of strains in minimal medium with 500 uM MBOA. 
+
+```{r, echo=F, warning=F, message=F, include=FALSE}
+results_AUC %>% filter(Media %in% "MM") %>% ggplot(aes(x = Strain, y = AUC_raw)) +
+  geom_bar(aes(fill = AMPO_on_MBOA_plates), stat = "summary") +
+  scale_fill_manual(values = c("cornflowerblue", "darkred"))+
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) 
+```
+
+```{r, echo=F, warning=F, message=F, include=FALSE}
+results_AUC %>% filter(Media %in% "MM") %>% 
+  ggplot(aes(x = reorder(Strain, AMPO_on_MBOA_plates), y = AUC_pos)) +
+  geom_bar(aes(fill = AMPO_on_MBOA_plates), stat = "summary") +
+  scale_fill_manual(values = c("cornflowerblue", "darkred")) +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) 
+```
+
+
+*Binary interpretation of bacterial growth:*  
+For binary interpretation (Bacterium X uses MBOA as C-source: YES or NO) of bacterial growth (quantitatively shown in Fig. S8c), we compared the 
+AUC[MBOA] vs. AUC[DMSO]. The binary data is then reported in Fig. 3 ("C-Source"). We defined a cutoff of >1.5x for the AUC[MBOA]-AUC[DMSO] for bacterial growth on MBOA as sole carbon source. 
+
+```{r, echo=F, warning=F, message=F, include=FALSE}
+results_AUC_dif_MBOA_DMSO <- results_AUC %>% as.data.frame() %>% filter(Media %in% "MM") %>% 
+  select(Strain, Well, Chem, AUC, AMPO_on_MBOA_plates, Plate, Replicate, Run) %>% 
+  pivot_wider(values_from = AUC, names_from = Chem) %>% 
+  mutate(Dif_MBOA_DMSO = MBOA-DMSO)
+```
+
+```{r, echo=F, warning=F, message=F}
+results_AUC_dif_MBOA_DMSO %>% filter(!Dif_MBOA_DMSO %in% NA) %>% 
+  ggplot(aes(x = Strain, y = Dif_MBOA_DMSO)) +
+  geom_bar(aes(fill = AMPO_on_MBOA_plates), stat = "summary") +
+  scale_fill_manual(values = c("cornflowerblue", "darkred")) +
+  theme(axis.text.x=element_text(angle = -90, hjust = 0, vjust = 0 )) 
+
+```
+
+```{r, echo=F, warning=F, message=F, include=FALSE}
+results_AUC_Dif_MBOA_DMSO_mean <- results_AUC_dif_MBOA_DMSO %>% 
+  filter(!Dif_MBOA_DMSO %in% NA) %>% 
+  group_by(Strain) %>%
+  dplyr::summarise(mean = mean(Dif_MBOA_DMSO)) %>% 
+  dplyr::rename(Dif_MBOA_DMSO_mean = mean)
+```
+
+```{r, echo=F, warning=F, message=F, include=FALSE}
+results_AUC_Dif_MBOA_DMSO_mean %<>% mutate(Growth_MM_binary = case_when(Dif_MBOA_DMSO_mean > 1.5 ~ "growth", 
+                                                                       Dif_MBOA_DMSO_mean < 1.5 ~ "no_growth"))
+```
+
 Figure S8c
 
 ```{r, echo=F, warning=F, message=F}
-Fig.S11.MBOA_Micro_carbon <- ggtree::gheatmap(p_host_simple,
-         results_AUC_mean_MM_pos_sum %>%
-         dplyr::select(Strain, AUC_mean_pos) %>% 
+Fig.S8c.MBOA_Micro_carbon <- ggtree::gheatmap(p_host_simple,
+         # results_AUC_mean_MM_pos_sum %>%
+         # dplyr::select(Strain, AUC_mean_pos) %>% 
+         results_AUC_Dif_MBOA_DMSO_mean %>% 
+         dplyr::select(Strain, Dif_MBOA_DMSO_mean) %>% 
          as.data.frame() %>% column_to_rownames("Strain") ,
          offset=0.25,
          width=0.1,
@@ -1276,11 +1376,11 @@ Fig.S11.MBOA_Micro_carbon <- ggtree::gheatmap(p_host_simple,
        y = "", 
        shape = "Host plant",
        color = "AMPO phenotype",
-       fill = "AUC")
+       fill = "Dif. AUC MBOA-DMSO")
 
-Fig.S11.MBOA_Micro_carbon
+Fig.S8c.MBOA_Micro_carbon
 
-ggsave(plot = Fig.S11.MBOA_Micro_carbon, filename = "FigS8c_Micro_carbon_source_tree.svg",width = 15, height = 15, dpi = 300, scale = 1, units = "cm")
+ggsave(plot = Fig.S8c.MBOA_Micro_carbon, filename = "FigS8c_Micro_carbon_source_tree.svg",width = 25, height = 15, dpi = 300, scale = 1, units = "cm")
 ```
 
 # Combined tree
@@ -1469,7 +1569,7 @@ results_AUC_mean_MM_MBOA_max$conc_max
 # 10% of max
 results_AUC_mean_MM_MBOA_max_treshold <- (results_AUC_mean_MM_MBOA_max$conc_max / 100) * 20
 
-results_AUC_mean_MM_MBOA %<>% mutate(Binary = case_when(AUC_mean < results_AUC_mean_MM_MBOA_max_treshold ~ "no growth",
+results_AUC_mean_MM_MBOA %<>% mutate(Growth_MM = case_when(AUC_mean < results_AUC_mean_MM_MBOA_max_treshold ~ "no growth",
                                                            AUC_mean > results_AUC_mean_MM_MBOA_max_treshold ~ "growth"))
 ```
 
@@ -1561,9 +1661,12 @@ tree_plate_MBOA_DMG <- ggtree::gheatmap(tree_plate_MBOA + new_scale_fill(),
 
 ```{r, echo=F, warning=F, message=F, fig.width=15, fig.height=12}
 tree_plate_MBOA_DMG_carbon <- ggtree::gheatmap(tree_plate_MBOA_DMG + new_scale_fill(),
-                                        results_AUC_mean_MM_MBOA %>%
-         dplyr::select(Strain, Binary) %>% 
-         dplyr::rename('C-source' = Binary) %>% 
+                                        # results_AUC_mean_MM_MBOA %>%
+         results_AUC_Dif_MBOA_DMSO_mean %>% 
+         dplyr::select(Strain, Growth_MM_binary) %>% 
+         # dplyr::select(Strain, Growth_MM) %>% 
+         # dplyr::rename('C-source' = Growth_MM) %>% 
+         dplyr::rename('C-source' = Growth_MM_binary) %>% 
          as.data.frame() %>% column_to_rownames("Strain") ,
          offset=0.46,
          width=0.1,
